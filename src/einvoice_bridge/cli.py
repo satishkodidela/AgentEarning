@@ -151,6 +151,9 @@ def cmd_serve(args) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="einvoice-bridge", description="E-Rechnungen aus Stripe")
+    parser.add_argument(
+        "--env-file", help="Einstellungsdatei (Standard: $EINVOICE_ENV_FILE oder ~/.einvoice-bridge.env, falls vorhanden)"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("validate", help="XRechnung/ZUGFeRD-Dateien prüfen")
@@ -197,7 +200,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--port", type=int, default=8000)
     p.set_defaults(func=cmd_serve)
 
+    # Allow "doctor --env-file X" as well as "--env-file X doctor".
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if "--env-file" in argv[1:] and argv[0] != "--env-file":
+        i = argv.index("--env-file")
+        argv = argv[i : i + 2] + argv[:i] + argv[i + 2 :]
     args = parser.parse_args(argv)
+    from . import envfile
+
+    envfile.load(args.env_file)
     return args.func(args)
 
 

@@ -51,3 +51,18 @@ def test_missing_and_mixed_up_settings_are_errors(monkeypatch, tmp_path):
     assert report.failed
     assert status_of(report, "Schlüssel") == FAIL and status_of(report, "E-Mail") == FAIL
     assert status_of(report, "Paddle") == FAIL  # live token in sandbox mode
+
+
+def test_env_file_with_quotes_and_comments(tmp_path, monkeypatch):
+    from einvoice_bridge import envfile
+
+    path = tmp_path / "env"
+    path.write_text('# comment\nSMTP_FROM="E-Rechnungsbote <rechnung@erechnungsbote.de>"\nA=1\nB=\'two words\'\n\nC=x=y\n')
+    for key in ("SMTP_FROM", "A", "B", "C"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("A", "already-set")
+    assert envfile.load(path) == path
+    import os
+
+    assert os.environ["SMTP_FROM"] == "E-Rechnungsbote <rechnung@erechnungsbote.de>"
+    assert os.environ["A"] == "already-set" and os.environ["B"] == "two words" and os.environ["C"] == "x=y"

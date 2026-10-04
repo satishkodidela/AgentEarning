@@ -112,10 +112,12 @@ token as the password.
 4. Check and restart:
 
    ```bash
-   set -a; . ~/.einvoice-bridge.env; set +a
    einvoice-bridge doctor --send-test-to <your own e-mail>
    touch ~/einvoice/tmp/restart.txt
    ```
+
+   `doctor` reads `~/.einvoice-bridge.env` automatically. Run it inside the
+   app's virtualenv.
 
 5. Open **https://erechnungsbote.de**. Upload a file in "E-Rechnung
    kostenlos prüfen" and check that the result page appears.

@@ -49,7 +49,6 @@ fi
 # Passenger restarts the app when this file's timestamp changes.
 touch "$APP_ROOT/tmp/restart.txt"
 
-set -a; . "$ENV_FILE"; set +a
-einvoice-bridge doctor || true
+einvoice-bridge doctor --env-file "$ENV_FILE" || true
 echo
 echo "Done. Open https://$DOMAIN – the first request after a restart can take a few seconds."
