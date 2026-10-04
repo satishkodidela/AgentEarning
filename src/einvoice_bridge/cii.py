@@ -19,6 +19,7 @@ from .model import (
     Invoice,
     Line,
     Party,
+    VatCategory,
     fmt_amount,
     fmt_decimal,
 )
@@ -112,7 +113,8 @@ def _line(parent: etree._Element, invoice: Invoice, line: Line) -> None:
     tax = _ram(settlement, "ApplicableTradeTax")
     _ram(tax, "TypeCode", "VAT")
     _ram(tax, "CategoryCode", line.vat_category.value)
-    _ram(tax, "RateApplicablePercent", fmt_decimal(line.vat_rate))
+    if line.vat_category != VatCategory.NOT_SUBJECT:  # BR-O-05: no rate outside the scope of VAT
+        _ram(tax, "RateApplicablePercent", fmt_decimal(line.vat_rate))
     _period(settlement, line.period_start, line.period_end)
     for allowance in line.allowances:
         ac = _ram(settlement, "SpecifiedTradeAllowanceCharge")
@@ -190,7 +192,7 @@ def to_cii(invoice: Invoice, profile: str = "xrechnung") -> bytes:
         _ram(tax, "BasisAmount", fmt_amount(b.taxable_amount))
         _ram(tax, "CategoryCode", b.category.value)
         _opt(tax, "ExemptionReasonCode", b.exemption_code)
-        _ram(tax, "RateApplicablePercent", fmt_decimal(b.rate))
+        _ram(tax, "RateApplicablePercent", fmt_decimal(b.rate))  # XRechnung needs it even for O (BR-DE-14)
 
     _period(settlement, invoice.period_start, invoice.period_end)
 

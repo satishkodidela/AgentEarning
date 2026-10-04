@@ -208,7 +208,7 @@ def _line(
     problems: list[Problem],
 ) -> Line | None:
     where = f"lines[{index}]"
-    quantity = Decimal(raw.get("quantity") or 1)
+    quantity = Decimal(1 if raw.get("quantity") is None else raw["quantity"])
     amount = _amount(raw.get("amount"), currency)
     discount = sum((_amount(d.get("amount"), currency) for d in raw.get("discount_amounts") or []), Decimal(0))
     taxes = _line_taxes(raw)
@@ -242,12 +242,27 @@ def _line(
         # Prices include VAT: the net amount after discount is Stripe's taxable
         # amount (or what remains once its tax is taken out).
         taxable = [t["taxable_amount"] for t in taxes if t["taxable_amount"] is not None]
-        net = _amount(sum(taxable), currency) if taxable else amount - discount - tax
-        net_price = net / quantity
+        priced = _amount(sum(taxable), currency) if taxable else amount - discount - tax
     else:
-        net_price = amount / quantity
+        priced = amount
         if discount:
             allowances.append(Allowance(money(discount)))
+
+    # EN 16931 forbids negative prices (BR-27). Credits such as Stripe's
+    # proration line "Unused time on ..." become a negative quantity instead.
+    quantity = abs(quantity)
+    if priced < 0:
+        if allowances:
+            problems.append(Problem(where, "Rabatt auf eine Gutschriftsposition wird nicht unterstützt."))
+            return None
+        quantity = -quantity
+    if quantity == 0:
+        if priced != 0:
+            problems.append(Problem(where, "Position mit Menge 0, aber einem Betrag."))
+            return None
+        net_price = Decimal(0)
+    else:
+        net_price = priced / quantity
 
     # Subscription lines carry a service period; Stripe's end is exclusive.
     # One-off items have start == end, i.e. no period.

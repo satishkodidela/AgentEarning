@@ -180,3 +180,17 @@ def test_waitlist_double_opt_in(client, store, mailer):
     token = link.rsplit("/", 1)[-1]
     assert "Danke" in client.get(f"/warteliste/bestaetigen/{token}").text
     assert "ungültig" in client.get(f"/warteliste/bestaetigen/{token}").text
+
+
+def test_send_invoice_blocked_at_finalize_is_retried_when_paid(client, store, account, gateway):
+    gateway.invoices["in_open"]["customer_email"] = None
+    finalized = {"type": "invoice.finalized", "data": {"object": {"id": "in_open", "collection_method": "send_invoice"}}}
+    body, headers = signed(finalized)
+    client.post(f"/stripe/webhook/{account.id}", content=body, headers=headers)
+    assert store.document(account.id, "in_open").status == "blocked"
+
+    gateway.invoices["in_open"]["customer_email"] = "einkauf@musterstadt.de"
+    paid = {"type": "invoice.paid", "data": {"object": {"id": "in_open", "collection_method": "send_invoice"}}}
+    body, headers = signed(paid)
+    client.post(f"/stripe/webhook/{account.id}", content=body, headers=headers)
+    assert store.document(account.id, "in_open").status == "generated"

@@ -123,3 +123,37 @@ def test_missing_buyer_reference_is_reported(make_invoice):
     assert not report.valid
     (finding,) = [f for f in report.errors if f.rule_id == "BR-DE-15"]
     assert finding.hint
+
+
+def test_not_subject_to_vat_export_of_services(make_invoice, seller, render):
+    buyer = Party(
+        name="US Inc",
+        address=Address(city="New York", postcode="10001", country_code="US"),
+        electronic_address="ap@us.example",
+    )
+    render(
+        make_invoice(
+            seller=replace(seller, vat_id=None),  # BR-O-02
+            buyer=buyer,
+            lines=[
+                Line(
+                    id="1",
+                    name="Beratung (USA)",
+                    quantity=Decimal(1),
+                    net_price=Decimal(100),
+                    vat_category=VatCategory.NOT_SUBJECT,
+                    vat_rate=Decimal(0),
+                )
+            ],
+        )
+    )
+
+
+def test_paid_through_other_stripe_method(make_invoice, render):
+    invoice = make_invoice(
+        payment=Payment(means_code="ZZZ", means_text="Bereits bezahlt über Stripe"),
+        due_date=None,
+        payment_terms="Bereits bezahlt.",
+    )
+    invoice.paid_amount = invoice.tax_inclusive_total
+    render(invoice)

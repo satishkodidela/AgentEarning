@@ -148,9 +148,10 @@ def build_fix_list_email(account: Account, invoice: dict, problems: list[Problem
 def should_process(event_type: str, invoice: dict) -> bool:
     if event_type == "invoice.finalized":
         return invoice.get("collection_method") == "send_invoice"
-    if event_type == "invoice.paid":
-        return invoice.get("collection_method") != "send_invoice"
-    return False
+    # Paid invoices are always (re)considered: this is the first conversion for
+    # auto-charged invoices and the retry for send_invoice ones that were
+    # blocked at finalisation. process_invoice skips anything already generated.
+    return event_type == "invoice.paid"
 
 
 def process_invoice(

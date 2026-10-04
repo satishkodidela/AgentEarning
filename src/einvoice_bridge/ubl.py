@@ -17,6 +17,7 @@ from .model import (
     Invoice,
     Line,
     Party,
+    VatCategory,
     fmt_amount,
     fmt_decimal,
 )
@@ -103,7 +104,8 @@ def _line(parent: etree._Element, invoice: Invoice, line: Line) -> None:
     _cbc(item, "Name", line.name)
     tax = _cac(item, "ClassifiedTaxCategory")
     _cbc(tax, "ID", line.vat_category.value)
-    _cbc(tax, "Percent", fmt_decimal(line.vat_rate))
+    if line.vat_category != VatCategory.NOT_SUBJECT:  # BR-O-05: no rate outside the scope of VAT
+        _cbc(tax, "Percent", fmt_decimal(line.vat_rate))
     _cbc(_cac(tax, "TaxScheme"), "ID", "VAT")
     _cbc(_cac(el, "Price"), "PriceAmount", fmt_decimal(line.net_price), **cur)
 
@@ -181,7 +183,7 @@ def to_ubl(invoice: Invoice) -> bytes:
         _cbc(sub, "TaxAmount", fmt_amount(b.tax_amount), **cur)
         cat = _cac(sub, "TaxCategory")
         _cbc(cat, "ID", b.category.value)
-        _cbc(cat, "Percent", fmt_decimal(b.rate))
+        _cbc(cat, "Percent", fmt_decimal(b.rate))  # XRechnung needs it even for O (BR-DE-14)
         _cbc(cat, "TaxExemptionReasonCode", b.exemption_code)
         _cbc(cat, "TaxExemptionReason", b.exemption_reason)
         _cbc(_cac(cat, "TaxScheme"), "ID", "VAT")

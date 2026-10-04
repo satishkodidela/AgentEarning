@@ -132,3 +132,41 @@ def test_drafts_are_skipped(load_json, profile, rates, card):
     raw = load_json("stripe/invoice_paid_card.json")
     raw["status"] = "draft"
     assert map_invoice(raw, profile, rates, card).invoice is None
+
+
+def test_proration_credit_becomes_negative_quantity(load_json, profile, rates, card):
+    raw = load_json("stripe/invoice_paid_card.json")
+    credit = dict(raw["lines"]["data"][0])
+    credit.update(
+        id="il_unused",
+        amount=-2450,
+        description="Unused time on Pro after 16 Oct 2026",
+        discount_amounts=[],
+        taxes=[{**raw["lines"]["data"][0]["taxes"][0], "amount": -466, "taxable_amount": -2450}],
+    )
+    raw["lines"]["data"].append(credit)
+    raw["total"] = raw["amount_due"] = raw["amount_paid"] = 9040 - 2450 - 466
+    result = map_invoice(raw, profile, rates, card)
+    assert result.ok, result.problems
+    line = result.invoice.lines[-1]
+    assert line.quantity == -1 and line.net_price == Decimal("24.50")
+    assert line.net_amount == Decimal("-24.50")
+    assert result.invoice.tax_inclusive_total == Decimal("61.24")
+    assert_all_formats_valid(result.invoice)
+
+
+def test_zero_quantity_metered_line(load_json, profile, rates, card):
+    raw = load_json("stripe/invoice_paid_card.json")
+    zero = dict(raw["lines"]["data"][0])
+    zero.update(
+        id="il_zero",
+        amount=0,
+        quantity=0,
+        description="API calls (metered)",
+        taxes=[{**zero["taxes"][0], "amount": 0, "taxable_amount": 0}],
+    )
+    raw["lines"]["data"].append(zero)
+    result = map_invoice(raw, profile, rates, card)
+    assert result.ok, result.problems
+    assert result.invoice.lines[-1].net_amount == 0
+    assert_all_formats_valid(result.invoice)

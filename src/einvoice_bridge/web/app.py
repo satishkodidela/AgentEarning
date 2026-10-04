@@ -183,7 +183,7 @@ def create_app(
             raise HTTPException(400, "invalid signature") from None
         event = json.loads(payload)
         obj = event.get("data", {}).get("object", {})
-        if event.get("type") in HANDLED_EVENTS and should_process(event["type"], obj):
+        if obj.get("id") and event.get("type") in HANDLED_EVENTS and should_process(event["type"], obj):
             background.add_task(_run, store, account, obj["id"], gateway_factory, mailer)
         return {"received": True}
 
