@@ -16,10 +16,27 @@ server (see `docs/go-live-checklist.md`, phase D).
 
 Do this **before** creating the Python app (step 4).
 
-1. **Point the domain at the hosting.** Go to Namecheap Dashboard > Domain
-   List > erechnungsbote.de > Manage > **Nameservers** and choose
-   **"Namecheap Web Hosting DNS"**. Save. Without this the domain has no web
-   address and SSL validation cannot succeed.
+1. **Point the domain at the hosting.** Keep the nameservers on
+   **Namecheap BasicDNS**. Switching a `.de` domain to "Namecheap Web
+   Hosting DNS" often fails with "Oops, something went wrong": the `.de`
+   registry first checks that the new nameservers already hold the
+   domain's settings. Instead, go to Domain List > erechnungsbote.de >
+   Manage > **Advanced DNS**:
+   - Find the hosting IP in cPanel's sidebar under "Shared IP Address".
+   - Delete the default parking records (CNAME `www` → parkingpage, URL
+     Redirect `@`).
+   - Add the A record and save each row with ✓:
+
+     | Type | Host | Value |
+     |---|---|---|
+     | A Record | `@` | hosting IP |
+     | CNAME Record | `www` | `erechnungsbote.de.` |
+
+   - Under **Mail Settings**, choose **Private Email**. This adds the MX
+     and SPF records.
+
+   With BasicDNS, all later records (DKIM, DMARC) go in this Advanced DNS
+   tab too, not in cPanel's Zone Editor.
 2. Wait until `http://erechnungsbote.de` shows the default hosting page.
    This usually takes 5–30 minutes.
 3. **SSL.** Go to Dashboard > SSL Certificates > PositiveSSL > Activate, and
