@@ -27,8 +27,8 @@ the website. The install flow itself lives in the web app
 4. Webhook for all installed accounts: Developers > Webhooks > Add endpoint
    - URL: `https://<your-domain>/stripe/webhook`
    - "Listen to events on Connected accounts"
-   - Events: `invoice.finalized`, `invoice.paid`,
-     `account.application.deauthorized`
+   - Events: `invoice.finalized`, `invoice.paid`, `credit_note.created`,
+     `credit_note.voided`, `account.application.deauthorized`
    - Copy the signing secret (`whsec_...`).
 5. Server environment (`/etc/einvoice-bridge.env`):
 

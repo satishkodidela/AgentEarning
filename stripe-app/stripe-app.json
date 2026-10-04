@@ -14,6 +14,10 @@
       "purpose": "Liest finalisierte und bezahlte Rechnungen, um daraus E-Rechnungen (XRechnung, ZUGFeRD) zu erzeugen."
     },
     {
+      "permission": "credit_note_read",
+      "purpose": "Liest Gutschriften und Erstattungen, um daraus Rechnungskorrekturen als E-Rechnung zu erzeugen."
+    },
+    {
       "permission": "tax_rate_read",
       "purpose": "Liest die Steuersätze der Rechnungspositionen für die Umsatzsteuer-Aufschlüsselung."
     },

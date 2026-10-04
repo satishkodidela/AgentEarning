@@ -1,0 +1,48 @@
+{
+  "id": "cn_open",
+  "object": "credit_note",
+  "number": "MUSTER-0002-CN-01",
+  "invoice": "in_open",
+  "customer": "cus_Q1",
+  "currency": "eur",
+  "status": "issued",
+  "type": "pre_payment",
+  "created": 1791183600,
+  "effective_at": 1791183600,
+  "reason": "order_change",
+  "memo": null,
+  "lines": {
+    "object": "list",
+    "has_more": false,
+    "data": [
+      {
+        "id": "cnli_2",
+        "object": "credit_note_line_item",
+        "type": "invoice_line_item",
+        "invoice_line_item": "il_4",
+        "description": "Handbuch (gedruckt)",
+        "quantity": 1,
+        "unit_amount": 3990,
+        "amount": 3990,
+        "discount_amount": 0,
+        "tax_amounts": [
+          {
+            "amount": 279,
+            "inclusive": false,
+            "tax_rate": {
+              "id": "txr_de7",
+              "percentage": 7.0
+            },
+            "taxable_amount": 3990,
+            "taxability_reason": null
+          }
+        ]
+      }
+    ]
+  },
+  "subtotal": 3990,
+  "total": 4269,
+  "refund": null,
+  "out_of_band_amount": null,
+  "customer_balance_transaction": null
+}

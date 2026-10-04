@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS documents (
     account_id TEXT NOT NULL REFERENCES accounts(id),
     stripe_invoice_id TEXT NOT NULL,
     number TEXT,
-    status TEXT NOT NULL,           -- generated | blocked | failed
+    status TEXT NOT NULL,           -- generated | blocked | failed | voided
     problems_json TEXT NOT NULL DEFAULT '[]',
     files_json TEXT NOT NULL DEFAULT '{}',
     delivered_to TEXT,
@@ -79,6 +79,8 @@ ACCOUNT_COLUMNS = {
 }
 DOCUMENT_COLUMNS = {
     "billable": "INTEGER NOT NULL DEFAULT 1",  # counts towards the monthly plan limit
+    "kind": "TEXT NOT NULL DEFAULT 'invoice'",  # invoice | credit_note
+    "related_number": "TEXT",  # for credit notes: the invoice they correct
 }
 
 
@@ -134,6 +136,12 @@ class Document:
     files: dict[str, str]  # name -> sha256
     delivered_to: str | None
     created_at: str
+    kind: str = "invoice"
+    related_number: str | None = None
+
+    @property
+    def is_credit_note(self) -> bool:
+        return self.kind == "credit_note"
 
 
 class Store:
@@ -397,6 +405,8 @@ class Store:
         problems: list[dict],
         files: dict[str, bytes] | None = None,
         billable: bool = True,
+        kind: str = "invoice",
+        related_number: str | None = None,
     ) -> Document:
         hashes = {}
         if files:
@@ -418,13 +428,26 @@ class Store:
             )
             self.db.execute(
                 "INSERT INTO documents (account_id, stripe_invoice_id, number, status, problems_json, files_json,"
-                " created_at, billable) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " created_at, billable, kind, related_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     account_id, stripe_invoice_id, number, status, json.dumps(problems, ensure_ascii=False),
-                    json.dumps(hashes), now(), int(billable),
+                    json.dumps(hashes), now(), int(billable), kind, related_number,
                 ),
             )
         return self.document(account_id, stripe_invoice_id)
+
+    def mark_voided(self, account_id: str, stripe_id: str, message: str) -> Document | None:
+        """Flag a document whose Stripe object was voided; archived files stay untouched."""
+        doc = self.document(account_id, stripe_id)
+        if doc is None:
+            return None
+        problems = doc.problems + [{"field": "status", "message": message, "severity": "warning"}]
+        with self.db:
+            self.db.execute(
+                "UPDATE documents SET status = 'voided', problems_json = ? WHERE id = ?",
+                (json.dumps(problems, ensure_ascii=False), doc.id),
+            )
+        return self.document(account_id, stripe_id)
 
     def mark_delivered(self, document_id: int, recipients: str) -> None:
         with self.db:
@@ -453,6 +476,8 @@ class Store:
             files=json.loads(row["files_json"]),
             delivered_to=row["delivered_to"],
             created_at=row["created_at"],
+            kind=row["kind"],
+            related_number=row["related_number"],
         )
 
     # waitlist (double opt-in) ------------------------------------------------

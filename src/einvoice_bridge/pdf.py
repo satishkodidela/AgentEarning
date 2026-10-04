@@ -18,7 +18,10 @@ from .model import Invoice, VatCategory, fmt_decimal, money
 
 FONTS = Path(__file__).parent / "fonts"
 
-TYPE_TITLES = {"380": "Rechnung", "381": "Gutschrift", "384": "Rechnungskorrektur", "326": "Teilrechnung"}
+# A seller's credit note (381) is titled "Rechnungskorrektur": in German VAT law
+# "Gutschrift" means self-billing by the buyer (§ 14 Abs. 2 UStG), and using it
+# for a seller's correction invites confusion with the tax office.
+TYPE_TITLES = {"380": "Rechnung", "381": "Rechnungskorrektur", "384": "Rechnungskorrektur", "326": "Teilrechnung"}
 MEANS_TEXT = {
     "58": "SEPA-Überweisung",
     "30": "Überweisung",
@@ -84,7 +87,7 @@ def render_visual_pdf(invoice: Invoice) -> bytes:
             )
             if x
         ),
-        "Diese Rechnung enthält eine maschinenlesbare E-Rechnung (ZUGFeRD / Factur-X, Profil EN 16931).",
+        "Dieses Dokument enthält eine maschinenlesbare E-Rechnung (ZUGFeRD / Factur-X, Profil EN 16931).",
     ]
     pdf = _InvoicePDF(footer)
     pdf.set_title(f"{TYPE_TITLES.get(invoice.type_code, 'Rechnung')} {invoice.number}")
@@ -108,8 +111,8 @@ def render_visual_pdf(invoice: Invoice) -> bytes:
         pdf.cell(85, 5, line, new_x="LMARGIN", new_y="NEXT")
 
     meta = [
-        ("Rechnungsnummer", invoice.number),
-        ("Rechnungsdatum", de_date(invoice.issue_date)),
+        ("Korrekturnummer" if invoice.is_credit_note else "Rechnungsnummer", invoice.number),
+        ("Datum" if invoice.is_credit_note else "Rechnungsdatum", de_date(invoice.issue_date)),
     ]
     if invoice.period_start:
         meta.append(("Leistungszeitraum", f"{de_date(invoice.period_start)} – {de_date(invoice.period_end)}"))
@@ -123,7 +126,9 @@ def render_visual_pdf(invoice: Invoice) -> bytes:
     if b.vat_id:
         meta.append(("Ihre USt-IdNr.", b.vat_id))
     if invoice.preceding_invoice:
-        meta.append(("Bezug auf Rechnung", invoice.preceding_invoice))
+        meta.append(("Zu Rechnung", invoice.preceding_invoice))
+        if invoice.preceding_invoice_date:
+            meta.append(("vom", de_date(invoice.preceding_invoice_date)))
     y = 50
     pdf.set_font("DejaVu", "", 8.5)
     for label, value in meta:
@@ -190,7 +195,7 @@ def render_visual_pdf(invoice: Invoice) -> bytes:
             total_row(f"USt. {de_number(vb.rate)} % auf {eur(vb.taxable_amount, cur)}", eur(vb.tax_amount, cur))
         elif vb.exemption_reason:
             reasons.append(vb.exemption_reason)
-    total_row("Gesamtbetrag", eur(invoice.tax_inclusive_total, cur), bold=True)
+    total_row("Korrekturbetrag" if invoice.is_credit_note else "Gesamtbetrag", eur(invoice.tax_inclusive_total, cur), bold=True)
     if invoice.paid_amount:
         total_row("Bereits bezahlt", f"-{eur(invoice.paid_amount, cur)}")
         total_row("Zahlbetrag", eur(invoice.amount_due, cur), bold=True)
@@ -202,14 +207,14 @@ def render_visual_pdf(invoice: Invoice) -> bytes:
     pay = invoice.payment
     if invoice.payment_terms:
         pdf.multi_cell(0, 4.5, invoice.payment_terms, align="L", new_x="LMARGIN", new_y="NEXT")
-    if pay.iban and invoice.amount_due > 0:
+    if pay.iban and invoice.amount_due > 0 and not invoice.is_credit_note:
         details = f"Bitte überweisen Sie den Betrag auf: IBAN {pay.iban}"
         if pay.bic:
             details += f", BIC {pay.bic}"
         if pay.remittance_info:
             details += f". Verwendungszweck: {pay.remittance_info}"
         pdf.multi_cell(0, 4.5, details, align="L", new_x="LMARGIN", new_y="NEXT")
-    elif pay.card_last_digits:
+    elif pay.card_last_digits and not invoice.is_credit_note:  # credit notes say how they are refunded
         pdf.multi_cell(
             0, 4.5, f"Zahlungsart: {MEANS_TEXT.get(pay.means_code, 'Karte')} (**** {pay.card_last_digits})",
             new_x="LMARGIN", new_y="NEXT",

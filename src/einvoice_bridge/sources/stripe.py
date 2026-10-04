@@ -336,6 +336,69 @@ def _payment(
     )
 
 
+def _buyer_reference(values: dict[str, str], invoice: dict, problems: list[Problem]) -> str | None:
+    reference = _first(values, BUYER_REFERENCE_FIELDS)
+    if reference:
+        return reference
+    # B2B buyers rarely issue a reference; the customer number is the usual
+    # agreed stand-in. Public-sector buyers need their Leitweg-ID.
+    customer = invoice.get("customer")
+    problems.append(
+        Problem(
+            "buyer_reference",
+            "Keine Käuferreferenz/Leitweg-ID angegeben; die Stripe-Kundennummer wird verwendet. "
+            "Für Behörden muss die Leitweg-ID als Custom Field oder Metadatum „Leitweg-ID“ gesetzt sein.",
+            "warning",
+        )
+    )
+    return customer if isinstance(customer, str) else (customer or {}).get("id")
+
+
+def _vat_parties(seller: Party, buyer: Party, lines: list[Line], problems: list[Problem]) -> tuple[Party, Party] | None:
+    """Apply the VAT-category rules that touch the parties; None if they cannot be met."""
+    categories = {line.vat_category for line in lines}
+    if VatCategory.NOT_SUBJECT in categories:
+        # BR-O-02: no VAT identifiers when the supply is outside the scope of VAT.
+        seller = replace(seller, vat_id=None)
+        buyer = replace(buyer, vat_id=None)
+        if not seller.effective_identifier:
+            problems.append(Problem("seller.tax_number", "Für nicht steuerbare Leistungen wird Ihre Steuernummer benötigt."))
+            return None
+    if VatCategory.REVERSE_CHARGE in categories and not buyer.vat_id:
+        problems.append(Problem("customer_tax_ids", "Für Reverse Charge braucht der Kunde eine USt-IdNr. in Stripe."))
+        return None
+    return seller, buyer
+
+
+def _charged_tax(lines: list[Line], raw_lines: list[dict], currency: str) -> dict[tuple[VatCategory, Decimal], Decimal]:
+    """The tax Stripe actually charged per category and rate (it rounds per line)."""
+    charged: dict[tuple[VatCategory, Decimal], Decimal] = {}
+    for line, raw in zip(lines, raw_lines):
+        key = (line.vat_category, line.vat_rate)
+        charged[key] = charged.get(key, Decimal(0)) + sum(
+            (_amount(t["amount"], currency) for t in _line_taxes(raw)), Decimal(0)
+        )
+    return charged
+
+
+def _total_matches(result: Invoice, total: Decimal, problems: list[Problem]) -> bool:
+    if result.tax_inclusive_total == money(total):
+        return True
+    problems.append(
+        Problem(
+            "total",
+            f"Die berechnete Summe {result.tax_inclusive_total} weicht von der Stripe-Summe {money(total)} ab "
+            "(z. B. durch Rabatte auf Rechnungsebene oder Guthaben). Das Dokument wird nicht umgewandelt.",
+        )
+    )
+    return False
+
+
+def _issue_date(invoice: dict, tz: ZoneInfo) -> date | None:
+    issued = (invoice.get("status_transitions") or {}).get("finalized_at") or invoice.get("effective_at") or invoice.get("created")
+    return _local_date(issued, tz)
+
+
 def map_invoice(
     invoice: dict,
     profile: SellerProfile,
@@ -363,8 +426,7 @@ def map_invoice(
     if not raw_lines:
         problems.append(Problem("lines", "Die Rechnung hat keine Positionen."))
 
-    issued = invoice.get("status_transitions", {}).get("finalized_at") or invoice.get("effective_at") or invoice.get("created")
-    issue_date = _local_date(issued, tz)
+    issue_date = _issue_date(invoice, tz)
     due_date = _local_date(invoice.get("due_date"), tz)
 
     total = _amount(invoice.get("total"), currency)
@@ -373,36 +435,14 @@ def map_invoice(
     payment = _payment(invoice, profile, payment_method, paid, problems)
 
     values = _fields(invoice)
-    buyer_reference = _first(values, BUYER_REFERENCE_FIELDS)
-    if not buyer_reference:
-        # B2B buyers rarely issue a reference; the customer number is the
-        # usual agreed stand-in. Public-sector buyers need their Leitweg-ID.
-        customer = invoice.get("customer")
-        buyer_reference = customer if isinstance(customer, str) else (customer or {}).get("id")
-        problems.append(
-            Problem(
-                "buyer_reference",
-                "Keine Käuferreferenz/Leitweg-ID angegeben; die Stripe-Kundennummer wird verwendet. "
-                "Für Behörden muss die Leitweg-ID als Custom Field oder Metadatum „Leitweg-ID“ gesetzt sein.",
-                "warning",
-            )
-        )
+    buyer_reference = _buyer_reference(values, invoice, problems)
 
     if any(line is None for line in lines) or any(p.severity == "error" for p in problems):
         return MappingResult(None, problems)
-
-    seller = profile.party()
-    categories = {line.vat_category for line in lines}
-    if VatCategory.NOT_SUBJECT in categories:
-        # BR-O-02: no VAT identifiers when the supply is outside the scope of VAT.
-        seller = replace(seller, vat_id=None)
-        buyer = replace(buyer, vat_id=None)
-        if not seller.effective_identifier:
-            problems.append(Problem("seller.tax_number", "Für nicht steuerbare Leistungen wird Ihre Steuernummer benötigt."))
-            return MappingResult(None, problems)
-    if VatCategory.REVERSE_CHARGE in categories and not buyer.vat_id:
-        problems.append(Problem("customer_tax_ids", "Für Reverse Charge braucht der Kunde eine USt-IdNr. in Stripe."))
+    parties = _vat_parties(profile.party(), buyer, lines, problems)
+    if parties is None:
         return MappingResult(None, problems)
+    seller, buyer = parties
 
     notes = [text for text in (invoice.get("description"), invoice.get("footer")) if text]
     starts = [line.period_start for line in lines if line.period_start]
@@ -424,24 +464,8 @@ def map_invoice(
         period_end=max(ends) if ends else None,
         delivery_date=None if starts else issue_date,
     )
-
-    # Keep the tax Stripe actually charged (it rounds per line).
-    charged: dict[tuple[VatCategory, Decimal], Decimal] = {}
-    for line, raw in zip(lines, raw_lines):
-        key = (line.vat_category, line.vat_rate)
-        charged[key] = charged.get(key, Decimal(0)) + sum(
-            (_amount(t["amount"], currency) for t in _line_taxes(raw)), Decimal(0)
-        )
-    result.charged_tax = charged
-
-    if result.tax_inclusive_total != money(total):
-        problems.append(
-            Problem(
-                "total",
-                f"Die berechnete Summe {result.tax_inclusive_total} weicht von der Stripe-Summe {money(total)} ab "
-                "(z. B. durch Rabatte auf Rechnungsebene oder Guthaben). Die Rechnung wird nicht umgewandelt.",
-            )
-        )
+    result.charged_tax = _charged_tax(lines, raw_lines, currency)
+    if not _total_matches(result, total, problems):
         return MappingResult(None, problems)
 
     result.paid_amount = money(total - remaining)
@@ -457,3 +481,164 @@ def map_invoice(
 
     return MappingResult(result, problems)
 
+
+# Credit notes -------------------------------------------------------------------
+
+CREDIT_REASONS = {
+    "duplicate": "Doppelte Abrechnung",
+    "fraudulent": "Unberechtigte Zahlung",
+    "order_change": "Änderung der Bestellung",
+    "product_unsatisfactory": "Reklamation",
+}
+
+
+def _credit_line(raw: dict, original: dict) -> dict:
+    """A credit note line in the shape _line() reads (taken from the invoice line where needed)."""
+    discounts = raw.get("discount_amounts")
+    if discounts is None and raw.get("discount_amount"):
+        discounts = [{"amount": raw["discount_amount"]}]
+    line = {
+        "amount": raw.get("amount"),
+        "quantity": raw.get("quantity"),
+        "description": raw.get("description") or original.get("description"),
+        "discount_amounts": discounts or [],
+        "period": original.get("period"),
+    }
+    if raw.get("taxes") is not None:
+        line["taxes"] = raw["taxes"]
+    else:
+        line["tax_amounts"] = raw.get("tax_amounts") or []
+    return line
+
+
+def _settlement(
+    credit_note: dict, invoice: dict, payment_method: dict | None, currency: str
+) -> tuple[Payment, str]:
+    """How the credited amount reaches the customer: payment means plus a sentence for the document."""
+    number = credit_note.get("number")
+    refunds = credit_note.get("refunds")
+    if refunds is None:
+        refunds = [{"refund": credit_note["refund"]}] if credit_note.get("refund") else []
+    refunded = bool(refunds)
+    out_of_band = _amount(credit_note.get("out_of_band_amount"), currency)
+    to_balance = bool(credit_note.get("customer_balance_transaction"))
+    against_invoice = credit_note.get("type") == "pre_payment" or (
+        not refunded and not out_of_band and not to_balance and invoice.get("status") == "open"
+    )
+
+    if refunded and (payment_method or {}).get("type") == "card":
+        card = payment_method["card"]
+        payment = Payment(
+            means_code=CARD_MEANS.get(card.get("funding"), "54"),
+            card_last_digits=card.get("last4"),
+            card_network=(card.get("brand") or "card").upper(),
+            remittance_info=number,
+        )
+        return payment, f"Der Betrag wird auf Ihre Karte (**** {card.get('last4')}) erstattet."
+    if refunded:
+        return (
+            Payment(means_code="ZZZ", means_text="Erstattung über Stripe", remittance_info=number),
+            "Der Betrag wird auf das ursprüngliche Zahlungsmittel erstattet.",
+        )
+    if out_of_band:
+        return (
+            Payment(means_code="ZZZ", means_text="Erstattung außerhalb von Stripe", remittance_info=number),
+            "Die Erstattung erfolgt gesondert.",
+        )
+    if to_balance:
+        return (
+            Payment(means_code="97", means_text="Verrechnung mit Kundenguthaben", remittance_info=number),
+            "Der Betrag wird Ihrem Kundenguthaben gutgeschrieben und mit künftigen Rechnungen verrechnet.",
+        )
+    if against_invoice:
+        return (
+            Payment(means_code="97", means_text=f"Verrechnung mit Rechnung {invoice.get('number')}", remittance_info=number),
+            f"Der Betrag mindert den offenen Betrag der Rechnung {invoice.get('number')}.",
+        )
+    return (
+        Payment(means_code="ZZZ", means_text="Erstattung über Stripe", remittance_info=number),
+        "Der Betrag wird erstattet.",
+    )
+
+
+def map_credit_note(
+    credit_note: dict,
+    invoice: dict,
+    profile: SellerProfile,
+    tax_rate: TaxRateLookup | None = None,
+    payment_method: dict | None = None,
+) -> MappingResult:
+    """Map a Stripe credit note to an EN 16931 credit note (type 381).
+
+    The original invoice supplies what a credit note does not carry: the
+    customer's name, address and tax IDs as invoiced, the buyer reference,
+    service periods, and the invoice number and date it corrects (BT-25/26).
+    """
+    problems = [Problem("seller", msg) for msg in profile.problems()]
+    tz = ZoneInfo(profile.timezone)
+    currency = (credit_note.get("currency") or invoice.get("currency") or "eur").lower()
+
+    if credit_note.get("status") != "issued":
+        problems.append(Problem("status", "Nur ausgestellte (nicht stornierte) Gutschriften aus Stripe werden umgewandelt."))
+    number = credit_note.get("number")
+    if not number:
+        problems.append(Problem("number", "Die Korrektur hat keine Nummer."))
+    if not invoice.get("number"):
+        problems.append(Problem("invoice", "Die ursprüngliche Rechnung hat keine Rechnungsnummer."))
+
+    buyer = _buyer(invoice, problems)
+
+    original_lines = {line.get("id"): line for line in (invoice.get("lines") or {}).get("data") or []}
+    raw_lines = [
+        _credit_line(raw, original_lines.get(raw.get("invoice_line_item")) or {})
+        for raw in (credit_note.get("lines") or {}).get("data") or []
+    ]
+    if (credit_note.get("lines") or {}).get("has_more"):
+        problems.append(Problem("lines", "Nicht alle Positionen wurden geladen (has_more)."))
+    if not raw_lines:
+        problems.append(Problem("lines", "Die Korrektur hat keine Positionen."))
+    lines = [_line(raw, i, currency, profile, invoice, tax_rate, tz, problems) for i, raw in enumerate(raw_lines)]
+
+    values = _fields(invoice)
+    buyer_reference = _buyer_reference(values, invoice, problems)
+    payment, settlement = _settlement(credit_note, invoice, payment_method, currency)
+
+    if any(line is None for line in lines) or any(p.severity == "error" for p in problems):
+        return MappingResult(None, problems)
+    parties = _vat_parties(profile.party(), buyer, lines, problems)
+    if parties is None:
+        return MappingResult(None, problems)
+    seller, buyer = parties
+
+    invoice_date = _issue_date(invoice, tz)
+    notes = [f"Korrektur zur Rechnung {invoice['number']} vom {invoice_date:%d.%m.%Y}." if invoice_date else f"Korrektur zur Rechnung {invoice['number']}."]
+    if CREDIT_REASONS.get(credit_note.get("reason")):
+        notes.append(f"Grund: {CREDIT_REASONS[credit_note['reason']]}.")
+    if credit_note.get("memo"):
+        notes.append(credit_note["memo"])
+    starts = [line.period_start for line in lines if line.period_start]
+    ends = [line.period_end for line in lines if line.period_end]
+
+    result = Invoice(
+        number=number,
+        issue_date=_local_date(credit_note.get("effective_at") or credit_note.get("created"), tz),
+        seller=seller,
+        buyer=buyer,
+        lines=lines,
+        buyer_reference=buyer_reference,
+        payment=payment,
+        type_code="381",
+        currency=currency.upper(),
+        notes=notes,
+        order_reference=_first(values, ORDER_REFERENCE_FIELDS),
+        preceding_invoice=invoice["number"],
+        preceding_invoice_date=invoice_date,
+        period_start=min(starts) if starts else None,
+        period_end=max(ends) if ends else None,
+        delivery_date=None if starts else invoice_date,
+        payment_terms=settlement,
+    )
+    result.charged_tax = _charged_tax(lines, raw_lines, currency)
+    if not _total_matches(result, _amount(credit_note.get("total"), currency), problems):
+        return MappingResult(None, problems)
+    return MappingResult(result, problems)

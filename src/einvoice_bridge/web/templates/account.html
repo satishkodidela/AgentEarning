@@ -14,7 +14,7 @@
   {% else %}
     <strong>Stripe-Webhook</strong><br>
     Endpunkt: <code>{{ webhook_url }}</code><br>
-    Ereignisse: <code>invoice.finalized</code>, <code>invoice.paid</code>
+    Ereignisse: <code>invoice.finalized</code>, <code>invoice.paid</code>, <code>credit_note.created</code>, <code>credit_note.voided</code>
   {% endif %}
   <br><span class="muted">Versand an Kunden: {{ "aktiv" if account.send_to_customer else "aus – Sie erhalten jede E-Rechnung zuerst selbst" }}</span>
   {% if usage %}<br><span class="muted">Tarif {{ usage.plan.name }}: {{ usage.used }} von {{ usage.plan.monthly_limit }} E-Rechnungen diesen Monat</span>
@@ -34,10 +34,11 @@
 <table>
 {% for d in documents %}
   <tr>
-    <td>{{ d.number or d.stripe_invoice_id }}<br><span class="muted">{{ d.created_at[:16].replace("T", " ") }}</span></td>
+    <td>{{ d.number or d.stripe_invoice_id }}{% if d.is_credit_note %}<br><span class="muted">Rechnungskorrektur{% if d.related_number %} zu {{ d.related_number }}{% endif %}</span>{% endif %}<br><span class="muted">{{ d.created_at[:16].replace("T", " ") }}</span></td>
     <td>
       {% if d.status == "generated" %}<span class="badge ok">Erstellt</span>
-      {% elif d.status == "blocked" %}<span class="badge warn">Daten fehlen</span>
+      {% elif d.status == "blocked" %}<span class="badge warn">{{ "Zurückgehalten" if d.problems and d.problems[0].field == "plan" else "Daten fehlen" }}</span>
+      {% elif d.status == "voided" %}<span class="badge warn">Storniert</span>
       {% else %}<span class="badge err">Fehler</span>{% endif %}
     </td>
     <td>

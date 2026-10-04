@@ -1,0 +1,72 @@
+{
+  "id": "cn_partial",
+  "object": "credit_note",
+  "number": "MUSTER-0001-CN-01",
+  "invoice": "in_paid",
+  "customer": "cus_Q1",
+  "currency": "eur",
+  "status": "issued",
+  "type": "post_payment",
+  "created": 1791633600,
+  "effective_at": 1791633600,
+  "reason": "product_unsatisfactory",
+  "memo": "Ein Nutzerplatz wurde nicht genutzt.",
+  "lines": {
+    "object": "list",
+    "has_more": false,
+    "data": [
+      {
+        "id": "cnli_1",
+        "object": "credit_note_line_item",
+        "type": "invoice_line_item",
+        "invoice_line_item": "il_2",
+        "description": "Zusätzlicher Nutzer",
+        "quantity": 1,
+        "unit_amount": 999,
+        "amount": 999,
+        "discount_amounts": [
+          {
+            "amount": 100,
+            "discount": "di_1"
+          }
+        ],
+        "taxes": [
+          {
+            "amount": 171,
+            "tax_behavior": "exclusive",
+            "tax_rate_details": {
+              "tax_rate": "txr_de19"
+            },
+            "taxability_reason": "standard_rated",
+            "taxable_amount": 899,
+            "type": "tax_rate_details"
+          }
+        ]
+      }
+    ]
+  },
+  "subtotal": 999,
+  "subtotal_excluding_tax": 899,
+  "total": 1070,
+  "total_excluding_tax": 899,
+  "total_taxes": [
+    {
+      "amount": 171,
+      "tax_behavior": "exclusive",
+      "tax_rate_details": {
+        "tax_rate": "txr_de19"
+      },
+      "taxability_reason": "standard_rated",
+      "taxable_amount": 899,
+      "type": "tax_rate_details"
+    }
+  ],
+  "refunds": [
+    {
+      "refund": "re_1",
+      "amount_refunded": 1070
+    }
+  ],
+  "out_of_band_amount": null,
+  "customer_balance_transaction": null
+}

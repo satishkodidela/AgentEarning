@@ -21,8 +21,9 @@ WEBHOOK_SECRET = "whsec_test"
 
 
 class FakeGateway:
-    def __init__(self, invoices: dict, rates: dict, method: dict | None):
+    def __init__(self, invoices: dict, rates: dict, method: dict | None, credit_notes: dict | None = None):
         self.invoices, self.rates, self.method = invoices, rates, method
+        self.credit_notes = credit_notes or {}
 
     def invoice(self, invoice_id):
         return json.loads(json.dumps(self.invoices[invoice_id]))
@@ -35,6 +36,12 @@ class FakeGateway:
 
     def recent_invoices(self, limit):
         return [self.invoice(i) for i in list(self.invoices)[:limit]]
+
+    def credit_note(self, credit_note_id):
+        return json.loads(json.dumps(self.credit_notes[credit_note_id]))
+
+    def recent_credit_notes(self, limit):
+        return [self.credit_note(i) for i in list(self.credit_notes)[:limit]]
 
 
 class FakeMailer:

@@ -75,10 +75,19 @@ def cmd_fetch(args) -> int:
         print("Stripe-Schlüssel fehlt (--api-key oder STRIPE_API_KEY).")
         return 2
     gateway = LiveStripeGateway(key)
-    raw = gateway.invoice(args.invoice_id)
     profile = SellerProfile.load(Path(args.profile))
-    method = gateway.payment_method(raw) if raw.get("status") == "paid" else None
-    result = map_invoice(raw, profile, tax_rate=gateway.tax_rate, payment_method=method)
+    if args.invoice_id.startswith("cn_"):
+        from .sources.stripe import map_credit_note
+
+        note = gateway.credit_note(args.invoice_id)
+        ref = note.get("invoice")
+        invoice = gateway.invoice(ref if isinstance(ref, str) else ref["id"])
+        method = gateway.payment_method(invoice) if (note.get("refunds") or note.get("refund")) else None
+        result = map_credit_note(note, invoice, profile, tax_rate=gateway.tax_rate, payment_method=method)
+    else:
+        raw = gateway.invoice(args.invoice_id)
+        method = gateway.payment_method(raw) if raw.get("status") == "paid" else None
+        result = map_invoice(raw, profile, tax_rate=gateway.tax_rate, payment_method=method)
     _print_problems(result.problems)
     if not result.ok:
         return 1
@@ -111,7 +120,7 @@ def cmd_account_create(args) -> int:
     base = os.environ.get("EINVOICE_BASE_URL", "http://localhost:8000").rstrip("/")
     print(f"Konto angelegt: {account.id}")
     print(f"Webhook-URL (in Stripe eintragen): {base}/stripe/webhook/{account.id}")
-    print("  Ereignisse: invoice.finalized, invoice.paid")
+    print("  Ereignisse: invoice.finalized, invoice.paid, credit_note.created, credit_note.voided")
     print(f"Dashboard (geheim halten): {base}/konto/{account.dashboard_token}")
     return 0
 
@@ -149,8 +158,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", default="out")
     p.set_defaults(func=cmd_convert)
 
-    p = sub.add_parser("fetch", help="Rechnung direkt aus Stripe laden und umwandeln")
-    p.add_argument("invoice_id")
+    p = sub.add_parser("fetch", help="Rechnung (in_…) oder Gutschrift (cn_…) aus Stripe laden und umwandeln")
+    p.add_argument("invoice_id", help="in_… oder cn_…")
     p.add_argument("--profile", required=True)
     p.add_argument("--api-key", help="eingeschränkter Stripe-Schlüssel (Standard: STRIPE_API_KEY)")
     p.add_argument("--out", default="out")

@@ -12,7 +12,7 @@ from typing import Protocol
 from .billing import current_month, effective_plan, usage
 from .model import Invoice
 from .pdf import to_zugferd_pdf
-from .sources.stripe import MappingResult, Problem, map_invoice
+from .sources.stripe import MappingResult, Problem, map_credit_note, map_invoice
 from .store import Account, Document, Store
 from .ubl import to_ubl
 from .validation import validate
@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 # invoices are converted once paid, so the payment method is known and the
 # e-invoice can say "bereits bezahlt"; invoices sent for manual payment are
 # converted as soon as they are finalised.
-HANDLED_EVENTS = {"invoice.finalized", "invoice.paid"}
+HANDLED_EVENTS = {"invoice.finalized", "invoice.paid", "credit_note.created", "credit_note.voided"}
 
 
 class StripeGateway(Protocol):
@@ -31,6 +31,8 @@ class StripeGateway(Protocol):
     def tax_rate(self, tax_rate_id: str) -> dict | None: ...
     def payment_method(self, invoice: dict) -> dict | None: ...
     def recent_invoices(self, limit: int) -> list[dict]: ...
+    def credit_note(self, credit_note_id: str) -> dict: ...
+    def recent_credit_notes(self, limit: int) -> list[dict]: ...
 
 
 class LiveStripeGateway:
@@ -58,6 +60,20 @@ class LiveStripeGateway:
         page = self.client.v1.invoices.list({"limit": min(100, limit * 3)})
         found = [inv.to_dict() for inv in page.data if inv.get("status") in ("open", "paid")]
         return found[:limit]
+
+    def credit_note(self, credit_note_id: str) -> dict:
+        note = self.client.v1.credit_notes.retrieve(credit_note_id).to_dict()
+        if (note.get("lines") or {}).get("has_more"):
+            lines = [
+                line.to_dict()
+                for line in self.client.v1.credit_notes.line_items.list(credit_note_id, {"limit": 100}).auto_paging_iter()
+            ]
+            note["lines"] = {"object": "list", "data": lines, "has_more": False}
+        return note
+
+    def recent_credit_notes(self, limit: int) -> list[dict]:
+        page = self.client.v1.credit_notes.list({"limit": min(100, limit * 2)})
+        return [n.to_dict() for n in page.data if n.get("status") == "issued"][:limit]
 
     def tax_rate(self, tax_rate_id: str) -> dict | None:
         if tax_rate_id not in self._rates:
@@ -123,16 +139,21 @@ class SmtpMailer:
 
 def build_delivery_email(invoice: Invoice, pdf: bytes, xml: bytes, to: list[str], bcc: list[str]) -> EmailMessage:
     msg = EmailMessage()
-    msg["Subject"] = f"Rechnung {invoice.number} von {invoice.seller.name}"
+    if invoice.is_credit_note:
+        doc = f"die Rechnungskorrektur {invoice.number} zur Rechnung {invoice.preceding_invoice}"
+        msg["Subject"] = f"Rechnungskorrektur {invoice.number} zu Rechnung {invoice.preceding_invoice} von {invoice.seller.name}"
+    else:
+        doc = f"die Rechnung {invoice.number}"
+        msg["Subject"] = f"Rechnung {invoice.number} von {invoice.seller.name}"
     msg["To"] = ", ".join(to)
     if bcc:
         msg["Bcc"] = ", ".join(bcc)
     msg["Reply-To"] = invoice.seller.contact.email if invoice.seller.contact else invoice.seller.electronic_address
     msg.set_content(
-        f"Guten Tag,\n\nanbei erhalten Sie die Rechnung {invoice.number} als E-Rechnung:\n\n"
-        f"- {invoice.number}.pdf: ZUGFeRD-Rechnung (PDF mit eingebetteten Rechnungsdaten)\n"
-        f"- {invoice.number}.xml: dieselbe Rechnung im Format XRechnung\n\n"
-        "Beide Dateien enthalten dieselbe Rechnung; bitte verbuchen Sie sie nur einmal.\n\n"
+        f"Guten Tag,\n\nanbei erhalten Sie {doc} als E-Rechnung:\n\n"
+        f"- {invoice.number}.pdf: ZUGFeRD (PDF mit eingebetteten Rechnungsdaten)\n"
+        f"- {invoice.number}.xml: dasselbe Dokument im Format XRechnung\n\n"
+        "Beide Dateien enthalten dasselbe Dokument; bitte verbuchen Sie es nur einmal.\n\n"
         f"Mit freundlichen Grüßen\n{invoice.seller.name}\n"
     )
     msg.add_attachment(pdf, maintype="application", subtype="pdf", filename=f"{invoice.number}.pdf")
@@ -154,6 +175,8 @@ def build_fix_list_email(account: Account, invoice: dict, problems: list[Problem
 
 
 def should_process(event_type: str, invoice: dict) -> bool:
+    if event_type.startswith("credit_note."):
+        return event_type in HANDLED_EVENTS
     if event_type == "invoice.finalized":
         return invoice.get("collection_method") == "send_invoice"
     # Paid invoices are always (re)considered: this is the first conversion for
@@ -210,10 +233,85 @@ def process_invoice(
         tax_rate=gateway.tax_rate,
         payment_method=gateway.payment_method(raw) if paid else None,
     )
+    return _finish(store, account, invoice_id, raw, result, mailer, deliver, billable)
+
+
+def process_credit_note(
+    store: Store,
+    account: Account,
+    credit_note_id: str,
+    gateway: StripeGateway,
+    mailer: Mailer,
+    deliver: bool = True,
+) -> Document:
+    """Convert a Stripe credit note into an e-invoice correction (type 381).
+
+    Corrections never count towards the plan limit and are processed even
+    when the limit is reached: a refund must be documented either way.
+    """
+    existing = store.document(account.id, credit_note_id)
+    if existing and existing.status in ("generated", "voided"):
+        return existing
+    if not account.is_active:
+        problem = {"field": "seller", "message": "Firmendaten fehlen noch. Bitte Einrichtung abschließen.", "severity": "error"}
+        return store.save_document(account.id, credit_note_id, None, "blocked", [problem], kind="credit_note")
+
+    raw = gateway.credit_note(credit_note_id)
+    invoice_ref = raw.get("invoice")
+    invoice = gateway.invoice(invoice_ref if isinstance(invoice_ref, str) else invoice_ref["id"])
+    refunded = bool(raw.get("refunds") or raw.get("refund"))
+    result = map_credit_note(
+        raw,
+        invoice,
+        account.profile,
+        tax_rate=gateway.tax_rate,
+        payment_method=gateway.payment_method(invoice) if refunded else None,
+    )
+    return _finish(
+        store, account, credit_note_id, raw, result, mailer, deliver, billable=False,
+        kind="credit_note", related_number=invoice.get("number"),
+    )
+
+
+def void_credit_note(store: Store, account: Account, credit_note_id: str, mailer: Mailer) -> Document | None:
+    """A credit note was voided in Stripe: flag it, and tell the seller if it was already sent."""
+    doc = store.mark_voided(
+        account.id, credit_note_id,
+        "In Stripe storniert. Die bereits erzeugte E-Rechnung bleibt archiviert; "
+        "falls sie versendet wurde, informieren Sie bitte Ihren Kunden.",
+    )
+    if doc and doc.delivered_to and account.profile:
+        msg = EmailMessage()
+        msg["Subject"] = f"Rechnungskorrektur {doc.number} wurde in Stripe storniert"
+        msg["To"] = account.profile.contact.email
+        msg.set_content(
+            f"Hallo,\n\ndie Rechnungskorrektur {doc.number} zur Rechnung {doc.related_number} wurde in Stripe storniert. "
+            f"Die E-Rechnung dazu wurde bereits an {doc.delivered_to} versendet.\n\n"
+            "Bitte informieren Sie Ihren Kunden, dass diese Korrektur nicht gilt. "
+            "Die Dateien bleiben unverändert im Archiv (Aufbewahrungspflicht).\n"
+        )
+        mailer.send(msg)
+    return doc
+
+
+def _finish(
+    store: Store,
+    account: Account,
+    stripe_id: str,
+    raw: dict,
+    result: MappingResult,
+    mailer: Mailer,
+    deliver: bool,
+    billable: bool,
+    kind: str = "invoice",
+    related_number: str | None = None,
+) -> Document:
+    """Validate, archive and (optionally) deliver a mapped invoice or credit note."""
     problems = [asdict(p) for p in result.problems]
+    meta = {"kind": kind, "related_number": related_number}
 
     if not result.ok:
-        doc = store.save_document(account.id, invoice_id, raw.get("number"), "blocked", problems)
+        doc = store.save_document(account.id, stripe_id, raw.get("number"), "blocked", problems, **meta)
         if deliver:
             mailer.send(build_fix_list_email(account, raw, result.problems, account.profile.contact.email))
         return doc
@@ -225,18 +323,19 @@ def process_invoice(
     for name, report in (("xrechnung.xml", validate(xml)), ("zugferd.pdf", validate(pdf))):
         findings += [{"file": name, **f} for f in report.to_dict()["findings"] if f["severity"] == "error"]
     if findings:
-        # Should not happen; never send an invoice the official rules reject.
-        log.error("generated invoice %s failed validation: %s", invoice_id, findings)
-        return store.save_document(account.id, invoice_id, invoice.number, "failed", problems + findings)
+        # Should not happen; never send a document the official rules reject.
+        log.error("generated document %s failed validation: %s", stripe_id, findings)
+        return store.save_document(account.id, stripe_id, invoice.number, "failed", problems + findings, **meta)
 
     doc = store.save_document(
         account.id,
-        invoice_id,
+        stripe_id,
         invoice.number,
         "generated",
         problems,
         files={"xrechnung.xml": xml, "zugferd.pdf": pdf},
         billable=billable,
+        **meta,
     )
 
     if not deliver:
@@ -247,7 +346,7 @@ def process_invoice(
     bcc = [seller_copy] if to_customer else []
     mailer.send(build_delivery_email(invoice, pdf, xml, to, bcc))
     store.mark_delivered(doc.id, ", ".join(to + bcc))
-    return store.document(account.id, invoice_id)
+    return store.document(account.id, stripe_id)
 
 
 def backfill(
@@ -265,10 +364,15 @@ def backfill(
     plan. Nothing is e-mailed: these invoices were already sent the old way,
     and sending them again to customers would create duplicates.
     """
-    return [
+    docs = [
         process_invoice(store, account, raw["id"], gateway, mailer, deliver=False, billable=billable)
         for raw in gateway.recent_invoices(limit)
     ]
+    docs += [
+        process_credit_note(store, account, raw["id"], gateway, mailer, deliver=False)
+        for raw in gateway.recent_credit_notes(limit)
+    ]
+    return docs
 
 
 def retry_limited(store: Store, account: Account, gateway: StripeGateway, mailer: Mailer, base_url: str = "") -> list[Document]:

@@ -34,9 +34,11 @@ from ..service import (
     SmtpMailer,
     StripeGateway,
     backfill,
+    process_credit_note,
     process_invoice,
     retry_limited,
     should_process,
+    void_credit_note,
 )
 from ..store import Account, Store
 from ..stripe_oauth import OAuthError, StripeOAuth
@@ -338,13 +340,8 @@ def create_app(
             store.uninstall(account.id)
             return {"received": True}
         obj = event.get("data", {}).get("object", {})
-        if (
-            account.status != "uninstalled"
-            and obj.get("id")
-            and event.get("type") in HANDLED_EVENTS
-            and should_process(event["type"], obj)
-        ):
-            background.add_task(_run, store, account, obj["id"], gateway_factory, mailer, base_url)
+        if account.status != "uninstalled":
+            _schedule(background, event, store, account, gateway_factory, mailer, base_url)
         return {"received": True}
 
     # manual accounts (restricted key + own webhook, set up with the CLI)
@@ -363,10 +360,7 @@ def create_app(
             )
         except stripe.SignatureVerificationError:
             raise HTTPException(400, "invalid signature") from None
-        event = json.loads(payload)
-        obj = event.get("data", {}).get("object", {})
-        if obj.get("id") and event.get("type") in HANDLED_EVENTS and should_process(event["type"], obj):
-            background.add_task(_run, store, account, obj["id"], gateway_factory, mailer, base_url)
+        _schedule(background, json.loads(payload), store, account, gateway_factory, mailer, base_url)
         return {"received": True}
 
     # dashboard (signed-in via Stripe) ------------------------------------------
@@ -530,6 +524,27 @@ def _backfill(store: Store, account: Account, gateway_factory, mailer: Mailer, b
         backfill(store, account, gateway_factory(account), mailer, billable=billable)
     except Exception:  # noqa: BLE001 - logged; the user can retry from the dashboard
         log.exception("backfill for account %s failed", account.id)
+
+
+def _schedule(background: BackgroundTasks, event: dict, store: Store, account: Account, gateway_factory, mailer: Mailer, base_url: str) -> None:
+    """Queue the work a Stripe event asks for (invoices and credit notes)."""
+    event_type = event.get("type", "")
+    obj = event.get("data", {}).get("object", {})
+    if not obj.get("id") or event_type not in HANDLED_EVENTS or not should_process(event_type, obj):
+        return
+    if event_type == "credit_note.created":
+        background.add_task(_run_credit_note, store, account, obj["id"], gateway_factory, mailer)
+    elif event_type == "credit_note.voided":
+        background.add_task(void_credit_note, store, account, obj["id"], mailer)
+    else:
+        background.add_task(_run, store, account, obj["id"], gateway_factory, mailer, base_url)
+
+
+def _run_credit_note(store: Store, account: Account, credit_note_id: str, gateway_factory, mailer: Mailer) -> None:
+    try:
+        process_credit_note(store, account, credit_note_id, gateway_factory(account), mailer)
+    except Exception:  # noqa: BLE001 - logged; retried on the next event or from the dashboard
+        log.exception("processing credit note %s for account %s failed", credit_note_id, account.id)
 
 
 def _retry_limited(store: Store, account: Account, gateway_factory, mailer: Mailer, base_url: str) -> None:

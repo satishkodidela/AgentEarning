@@ -38,7 +38,7 @@ Receiving them has been mandatory since 1 Jan 2025.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest                      # 101 tests, incl. official KoSIT samples
+.venv/bin/pytest                      # 111 tests, incl. official KoSIT samples
 
 # validate any XRechnung / ZUGFeRD file
 .venv/bin/einvoice-bridge validate rechnung.xml rechnung.pdf
@@ -70,6 +70,29 @@ From then on, invoice events for every installed account arrive at one
 Connect webhook (`/stripe/webhook`). Access tokens (1 hour) are refreshed
 automatically. Signing in again is the same OAuth round trip, so there are
 no passwords. Uninstalling in Stripe deletes the tokens and keeps the archive.
+
+## Credit notes (refunds and corrections)
+
+Every credit note issued in Stripe (refund, partial refund, credit to the
+customer balance, credit against an open invoice) becomes an e-invoice
+correction:
+
+- **Format:** type 381, in the same three formats as invoices. It references
+  the corrected invoice by number and date (BT-25/26), and takes the
+  customer data, buyer reference (Leitweg-ID) and service periods from that
+  invoice.
+- **Title:** the PDF says **"Rechnungskorrektur"**, not "Gutschrift". In
+  German VAT law "Gutschrift" means self-billing by the buyer.
+- **Settlement:** the document says how the money comes back:
+  - refunded to a card: card code with the last digits
+  - offset against the customer balance or the open invoice: code 97
+  - refunded outside Stripe: code ZZZ
+- **Plan limit:** corrections never count towards it and are processed even
+  when the limit is reached.
+- **Voided credit notes:** `credit_note.voided` marks the document
+  "Storniert". The archived files stay untouched, and the seller is told if
+  it was already sent.
+- **CLI:** `einvoice-bridge fetch cn_...` converts a single credit note.
 
 ## Plans and billing (Paddle)
 
@@ -109,10 +132,11 @@ export SMTP_HOST=... SMTP_USER=... SMTP_PASSWORD=... SMTP_FROM=rechnung@your-dom
 ```
 
 `account-create` prints the webhook URL to add in Stripe (events
-`invoice.finalized` and `invoice.paid`) and a secret dashboard link.
+`invoice.finalized`, `invoice.paid`, `credit_note.created` and
+`credit_note.voided`) and a secret dashboard link.
 
-Stripe restricted key: read access to Invoices, Tax Rates, PaymentIntents
-and PaymentMethods is enough. By default each e-invoice is emailed to the
+Stripe restricted key: read access to Invoices, Credit Notes, Tax Rates,
+PaymentIntents and PaymentMethods is enough. By default each e-invoice is emailed to the
 seller only; pass `--send-to-customer` once the output has been checked.
 
 ### How invoices flow
@@ -138,8 +162,6 @@ SchXslt and rewrites `src/einvoice_bridge/validation/artifacts/`.
 
 ## Known limits (before charging money)
 
-- Stripe **credit notes** (CreditNote objects) are not converted yet; the
-  model and writers already support type 381.
 - Invoice-level items Stripe does not attach to lines (e.g. customer balance
   adjustments that change the total) are refused rather than modelled.
 - Delivery is e-mail only. Public-sector recipients usually need upload to
