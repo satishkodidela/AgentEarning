@@ -108,6 +108,24 @@ def create_app(
     app = FastAPI(title="E-Rechnungsbote", docs_url=None, redoc_url=None)
     app.state.store = store
 
+    # cPanel locks its "Force HTTPS Redirect" switch while service subdomains
+    # (mail., cpanel., …) have no certificate, so on shared hosting the app
+    # redirects itself. Behind Caddy this stays off; Caddy already redirects.
+    if secure_cookies and os.environ.get("EINVOICE_FORCE_HTTPS", "").lower() in {"1", "true", "yes"}:
+
+        @app.middleware("http")
+        async def redirect_to_https(request: Request, call_next):
+            proxied_https = request.headers.get("x-forwarded-proto", "").split(",")[0].strip() == "https"
+            if (
+                request.url.scheme == "http"
+                and not proxied_https
+                and request.method in ("GET", "HEAD")
+                and not request.url.path.startswith("/.well-known/")
+            ):
+                query = f"?{request.url.query}" if request.url.query else ""
+                return RedirectResponse(f"{base_url}{request.url.path}{query}", status_code=301)
+            return await call_next(request)
+
     def render(request: Request, template: str, status_code: int = 200, **context) -> HTMLResponse:
         return TEMPLATES.TemplateResponse(
             request,

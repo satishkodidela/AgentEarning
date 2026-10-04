@@ -15,8 +15,8 @@ from .conftest import FIXTURES
 from .test_web import WEBHOOK_SECRET, gateway, mailer, signed, store  # noqa: F401 (shared fixtures)
 
 
-def call(app, method: str, path: str, body: bytes = b"", headers: dict | None = None) -> tuple[str, bytes]:
-    environ: dict = {}
+def call(app, method: str, path: str, body: bytes = b"", headers: dict | None = None, scheme: str = "http"):
+    environ: dict = {"wsgi.url_scheme": scheme}
     setup_testing_defaults(environ)
     environ.update(REQUEST_METHOD=method, PATH_INFO=path, CONTENT_LENGTH=str(len(body)))
     environ["wsgi.input"] = io.BytesIO(body)
@@ -27,8 +27,10 @@ def call(app, method: str, path: str, body: bytes = b"", headers: dict | None = 
 
     def start_response(s, h, exc_info=None):
         status["line"] = s
+        status["headers"] = dict(h)
 
     content = b"".join(app(environ, start_response))
+    call.last_headers = status["headers"]
     return status["line"], content
 
 
@@ -57,3 +59,14 @@ def test_pages_and_webhook_background_job_under_wsgi(store, gateway, mailer):
         time.sleep(0.1)
     assert doc and doc.status == "generated"
     assert mailer.sent and mailer.sent[0]["To"] == "ap@kunde.de"
+
+
+def test_force_https_follows_passenger_scheme(store, gateway, mailer, monkeypatch):
+    # Passenger sets wsgi.url_scheme from Apache's HTTPS flag; a2wsgi passes it on.
+    monkeypatch.setenv("EINVOICE_FORCE_HTTPS", "1")
+    app = ASGIMiddleware(create_app(store=store, gateway_factory=lambda a: gateway, mailer=mailer, base_url="https://x.test"))
+
+    status, _ = call(app, "GET", "/preise", scheme="http")
+    assert status.startswith("301") and call.last_headers["location"] == "https://x.test/preise"
+    status, _ = call(app, "GET", "/preise", scheme="https")
+    assert status.startswith("200")

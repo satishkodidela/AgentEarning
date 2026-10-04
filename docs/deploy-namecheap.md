@@ -62,7 +62,11 @@ Do this **before** creating the Python app (step 4).
       key from the server. Check that the Domains line shows both names,
       then click **Install**.
 4. When SSL/TLS Status shows both names green, go to cPanel > Domains and
-   switch on **Force HTTPS Redirect** for `erechnungsbote.de`.
+   switch on **Force HTTPS Redirect** for `erechnungsbote.de`. The switch can
+   stay locked with "Some aliases for this domain may not have a working SSL
+   certificate". That refers to `mail.`, `cpanel.` and similar names. If so,
+   leave it off: `install.sh` sets `EINVOICE_FORCE_HTTPS=1`, and the app then
+   redirects `http://` page views to `https://` itself.
 
 Certificates now last about 200 days (the CA/B Forum limit since March
 2026). Set a reminder to reissue about two weeks before the expiry date.

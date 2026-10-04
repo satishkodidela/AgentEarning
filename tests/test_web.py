@@ -223,6 +223,29 @@ def test_legal_texts_are_loaded_from_files(store, gateway, mailer, tmp_path):
     assert "Max Mustermann" in page and "Vor dem Livegang" not in page
 
 
+def test_force_https_redirects_plain_http_page_views(store, gateway, mailer, tmp_path, monkeypatch):
+    well_known = tmp_path / ".well-known"
+    well_known.mkdir()
+    (well_known / "token.txt").write_text("dcv")
+    monkeypatch.setenv("EINVOICE_WELL_KNOWN_DIR", str(well_known))
+    monkeypatch.setenv("EINVOICE_FORCE_HTTPS", "1")
+    app = create_app(store=store, gateway_factory=lambda a: gateway, mailer=mailer, base_url="https://erechnungsbote.de")
+    plain = TestClient(app, base_url="http://www.erechnungsbote.de", follow_redirects=False)
+
+    response = plain.get("/regeln?q=BR-DE-1")
+    assert response.status_code == 301
+    assert response.headers["location"] == "https://erechnungsbote.de/regeln?q=BR-DE-1"
+    # Validation files, webhooks and requests a TLS proxy already forwarded stay as they are.
+    assert plain.get("/.well-known/token.txt").text == "dcv"
+    assert plain.post("/paddle/webhook", content=b"{}").status_code != 301
+    assert plain.get("/health", headers={"X-Forwarded-Proto": "https"}).status_code == 200
+    assert TestClient(app, base_url="https://erechnungsbote.de").get("/health").status_code == 200
+
+
+def test_force_https_is_off_by_default(client):
+    assert TestClient(client.app, base_url="http://example.test").get("/health").status_code == 200
+
+
 def test_ssl_validation_files_are_served_without_traversal(store, gateway, mailer, tmp_path, monkeypatch):
     well_known = tmp_path / "public_html" / ".well-known"
     (well_known / "pki-validation").mkdir(parents=True)
