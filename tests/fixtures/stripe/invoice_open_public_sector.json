@@ -1,0 +1,102 @@
+{
+  "id": "in_open",
+  "object": "invoice",
+  "number": "MUSTER-0002",
+  "currency": "eur",
+  "status": "open",
+  "collection_method": "send_invoice",
+  "created": 1790924400,
+  "effective_at": 1790924400,
+  "status_transitions": {
+    "finalized_at": 1790924400,
+    "paid_at": null
+  },
+  "due_date": 1792134000,
+  "customer": "cus_Q1",
+  "customer_name": "Stadtverwaltung Musterstadt",
+  "customer_email": "ap@kunde.de",
+  "customer_address": {
+    "line1": "Marienplatz 2",
+    "line2": null,
+    "city": "München",
+    "postal_code": "80331",
+    "state": null,
+    "country": "DE"
+  },
+  "customer_tax_ids": [],
+  "customer_tax_exempt": "none",
+  "metadata": {
+    "Leitweg-ID": "991-12345-67"
+  },
+  "custom_fields": [
+    {
+      "name": "Bestellnummer",
+      "value": "PO-2026-17"
+    }
+  ],
+  "description": "Vielen Dank für Ihren Auftrag.",
+  "footer": null,
+  "hosted_invoice_url": "https://invoice.stripe.com/i/acct_x/test_open",
+  "lines": {
+    "object": "list",
+    "has_more": false,
+    "data": [
+      {
+        "id": "il_3",
+        "object": "line_item",
+        "amount": 120000,
+        "currency": "eur",
+        "description": "Einrichtung und Schulung",
+        "quantity": 1,
+        "period": {
+          "start": 1790924400,
+          "end": 1790924400
+        },
+        "discount_amounts": [],
+        "tax_amounts": [
+          {
+            "amount": 22800,
+            "inclusive": false,
+            "tax_rate": {
+              "id": "txr_de19",
+              "percentage": 19.0
+            },
+            "taxable_amount": 120000,
+            "taxability_reason": null
+          }
+        ]
+      },
+      {
+        "id": "il_4",
+        "object": "line_item",
+        "amount": 3990,
+        "currency": "eur",
+        "description": "Handbuch (gedruckt)",
+        "quantity": 1,
+        "period": {
+          "start": 1790924400,
+          "end": 1790924400
+        },
+        "discount_amounts": [],
+        "tax_amounts": [
+          {
+            "amount": 279,
+            "inclusive": false,
+            "tax_rate": {
+              "id": "txr_de7",
+              "percentage": 7.0
+            },
+            "taxable_amount": 3990,
+            "taxability_reason": null
+          }
+        ]
+      }
+    ]
+  },
+  "subtotal": 123990,
+  "total_excluding_tax": 123990,
+  "total": 147069,
+  "amount_due": 147069,
+  "amount_paid": 0,
+  "amount_remaining": 147069
+}

@@ -1,0 +1,117 @@
+{
+  "id": "in_paid",
+  "object": "invoice",
+  "number": "MUSTER-0001",
+  "currency": "eur",
+  "status": "paid",
+  "collection_method": "charge_automatically",
+  "created": 1790805900,
+  "effective_at": 1790805900,
+  "status_transitions": {
+    "finalized_at": 1790805900,
+    "paid_at": 1790805960
+  },
+  "due_date": null,
+  "customer": "cus_Q1",
+  "customer_name": "Kunde AG",
+  "customer_email": "ap@kunde.de",
+  "customer_address": {
+    "line1": "Marienplatz 2",
+    "line2": null,
+    "city": "München",
+    "postal_code": "80331",
+    "state": null,
+    "country": "DE"
+  },
+  "customer_tax_ids": [
+    {
+      "type": "eu_vat",
+      "value": "DE987654321"
+    }
+  ],
+  "customer_tax_exempt": "none",
+  "metadata": {},
+  "custom_fields": null,
+  "description": null,
+  "footer": null,
+  "hosted_invoice_url": "https://invoice.stripe.com/i/acct_x/test_paid",
+  "lines": {
+    "object": "list",
+    "has_more": false,
+    "data": [
+      {
+        "id": "il_1",
+        "object": "line_item",
+        "amount": 4900,
+        "currency": "eur",
+        "description": "1 × Pro (at €49.00 / month)",
+        "quantity": 1,
+        "period": {
+          "start": 1790805900,
+          "end": 1793487900
+        },
+        "discount_amounts": [],
+        "taxes": [
+          {
+            "amount": 931,
+            "tax_behavior": "exclusive",
+            "tax_rate_details": {
+              "tax_rate": "txr_de19"
+            },
+            "taxability_reason": "standard_rated",
+            "taxable_amount": 4900,
+            "type": "tax_rate_details"
+          }
+        ]
+      },
+      {
+        "id": "il_2",
+        "object": "line_item",
+        "amount": 2997,
+        "currency": "eur",
+        "description": "3 × Zusätzlicher Nutzer (at €9.99 / month)",
+        "quantity": 3,
+        "period": {
+          "start": 1790805900,
+          "end": 1793487900
+        },
+        "discount_amounts": [
+          {
+            "amount": 300,
+            "discount": "di_1"
+          }
+        ],
+        "taxes": [
+          {
+            "amount": 512,
+            "tax_behavior": "exclusive",
+            "tax_rate_details": {
+              "tax_rate": "txr_de19"
+            },
+            "taxability_reason": "standard_rated",
+            "taxable_amount": 2697,
+            "type": "tax_rate_details"
+          }
+        ]
+      }
+    ]
+  },
+  "subtotal": 7897,
+  "total_excluding_tax": 7597,
+  "total": 9040,
+  "amount_due": 9040,
+  "amount_paid": 9040,
+  "amount_remaining": 0,
+  "total_taxes": [
+    {
+      "amount": 1443,
+      "tax_behavior": "exclusive",
+      "tax_rate_details": {
+        "tax_rate": "txr_de19"
+      },
+      "taxability_reason": "standard_rated",
+      "taxable_amount": 7597,
+      "type": "tax_rate_details"
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+{
+  "id": "in_rc",
+  "object": "invoice",
+  "number": "MUSTER-0003",
+  "currency": "eur",
+  "status": "paid",
+  "collection_method": "charge_automatically",
+  "created": 1790805900,
+  "effective_at": 1790805900,
+  "status_transitions": {
+    "finalized_at": 1790805900,
+    "paid_at": 1790805960
+  },
+  "due_date": null,
+  "customer": "cus_FR",
+  "customer_name": "Client SARL",
+  "customer_email": "ap@client.fr",
+  "customer_address": {
+    "line1": "1 Rue de Rivoli",
+    "line2": null,
+    "city": "Paris",
+    "postal_code": "75001",
+    "state": null,
+    "country": "FR"
+  },
+  "customer_tax_ids": [
+    {
+      "type": "eu_vat",
+      "value": "FR12345678901"
+    }
+  ],
+  "customer_tax_exempt": "reverse",
+  "metadata": {},
+  "custom_fields": null,
+  "description": null,
+  "footer": null,
+  "hosted_invoice_url": "https://invoice.stripe.com/i/acct_x/test_paid",
+  "lines": {
+    "object": "list",
+    "has_more": false,
+    "data": [
+      {
+        "id": "il_5",
+        "object": "line_item",
+        "amount": 50000,
+        "currency": "eur",
+        "description": "1 × Enterprise (at €500.00 / month)",
+        "quantity": 1,
+        "period": {
+          "start": 1790805900,
+          "end": 1793487900
+        },
+        "discount_amounts": [],
+        "taxes": [
+          {
+            "amount": 0,
+            "tax_behavior": "exclusive",
+            "tax_rate_details": {
+              "tax_rate": "txr_rc0"
+            },
+            "taxability_reason": "reverse_charge",
+            "taxable_amount": 50000,
+            "type": "tax_rate_details"
+          }
+        ]
+      }
+    ]
+  },
+  "subtotal": 50000,
+  "total_excluding_tax": 50000,
+  "total": 50000,
+  "amount_due": 50000,
+  "amount_paid": 50000,
+  "amount_remaining": 0,
+  "total_taxes": [
+    {
+      "amount": 0,
+      "tax_behavior": "exclusive",
+      "tax_rate_details": {
+        "tax_rate": "txr_rc0"
+      },
+      "taxability_reason": "reverse_charge",
+      "taxable_amount": 50000,
+      "type": "tax_rate_details"
+    }
+  ]
+}

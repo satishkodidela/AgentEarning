@@ -1,0 +1,10 @@
+{
+  "id": "pm_1",
+  "object": "payment_method",
+  "type": "card",
+  "card": {
+    "brand": "visa",
+    "last4": "4242",
+    "funding": "credit"
+  }
+}

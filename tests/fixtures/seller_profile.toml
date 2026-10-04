@@ -1,0 +1,21 @@
+name = "Muster Software GmbH"
+email = "rechnung@muster.de"
+vat_id = "DE123456789"
+tax_number = "30/123/45678"
+legal_registration_id = "HRB 123456 B"
+
+[address]
+line1 = "Invalidenstraße 1"
+city = "Berlin"
+postcode = "10115"
+country_code = "DE"
+
+[contact]
+name = "Buchhaltung"
+phone = "+49 30 1234567"
+email = "buchhaltung@muster.de"
+
+[bank]
+iban = "DE02120300000000202051"
+bic = "BYLADEM1001"
+account_name = "Muster Software GmbH"
