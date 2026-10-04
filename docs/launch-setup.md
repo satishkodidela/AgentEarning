@@ -30,7 +30,7 @@ cover it.
    or Falkenstein, add your SSH key, enable backups.
 3. **Day 1 – DNS** (at your registrar): add the records below.
 4. **Day 1 – Deploy.** On the server, as root:
-   `DOMAIN=your-domain.de bash setup-server.sh`
+   `bash setup-server.sh` (the domain defaults to `erechnungsbote.de`)
    (from `deploy/`). It installs the app, Caddy with automatic HTTPS, a
    firewall and a hardened systemd service, and creates `/etc/einvoice-bridge.env`
    with a fresh encryption key. **Back that key up**: without it the stored
@@ -70,12 +70,12 @@ cover it.
 |---|---|---|
 | A | `@` | `<server IPv4>` |
 | AAAA | `@` | `<server IPv6>` |
-| CNAME | `www` | `<your-domain.de>.` |
+| CNAME | `www` | `erechnungsbote.de.` |
 | MX | `@` | the MX hosts mailbox.org shows in its domain setup |
 | TXT | `@` | `v=spf1 include:mailbox.org include:<Brevo SPF host from the Brevo dashboard> ~all` |
 | CNAME/TXT | DKIM selectors | copy exactly from mailbox.org and Brevo |
 | TXT | `@` | Brevo verification code (`brevo-code:...`) |
-| TXT | `_dmarc` | `v=DMARC1; p=none; rua=mailto:dmarc@<your-domain.de>` |
+| TXT | `_dmarc` | `v=DMARC1; p=none; rua=mailto:dmarc@erechnungsbote.de` |
 
 Use only **one** SPF record. Raise DMARC to `p=quarantine` after two weeks
 of clean reports. Gmail rejects non-compliant bulk mail, and the e-invoices
@@ -97,11 +97,11 @@ the live account once Paddle has approved your domain.
    - Create an **API key** that can create customer portal sessions and
      update subscriptions.
 3. **Developer tools > Notifications:** add a destination
-   `https://<your-domain>/paddle/webhook` with the events
+   `https://erechnungsbote.de/paddle/webhook` with the events
    `subscription.created`, `.updated`, `.activated`, `.trialing`,
    `.past_due`, `.paused`, `.resumed` and `.canceled`. Copy its secret key.
 4. **Checkout > Checkout settings:** set the default payment link to
-   `https://<your-domain>/bezahlen`. Paddle sends customers there to pay,
+   `https://erechnungsbote.de/bezahlen`. Paddle sends customers there to pay,
    for example after a failed renewal.
 5. Put the values into `/etc/einvoice-bridge.env`:
    - `PADDLE_ENVIRONMENT=sandbox` (or `production`)
@@ -146,7 +146,7 @@ Fill in the brackets.
 >
 > ich bin Einzelunternehmer mit Sitz in Indien und starte im November 2026 einen
 > B2B-SaaS-Dienst ausschließlich für Unternehmen in Deutschland:
-> „E-Rechnung für Stripe“ wandelt Rechnungen aus dem Zahlungsdienst Stripe
+> „E-Rechnungsbote“ (erechnungsbote.de) wandelt Rechnungen aus dem Zahlungsdienst Stripe
 > automatisch in E-Rechnungen (XRechnung, ZUGFeRD) um, prüft sie und versendet sie
 > auf Wunsch an die Kunden meiner Kunden. Dabei verarbeite ich personenbezogene Daten
 > aus den Rechnungen (Ansprechpartner, E-Mail-Adressen) im Auftrag meiner Kunden.
@@ -157,7 +157,7 @@ Fill in the brackets.
 > - Zahlungsabwicklung über Paddle als Merchant of Record (Paddle verkauft im eigenen Namen an meine Kunden).
 > - Kostenloser Online-Validator: hochgeladene Dateien werden nur im Arbeitsspeicher geprüft und nicht gespeichert.
 > - Warteliste mit Double-Opt-in; keine Kaltakquise per E-Mail.
-> - Website (Testversion): [URL]
+> - Website (Testversion): https://erechnungsbote.de
 >
 > Ich bitte um ein Festpreisangebot für:
 > 1. Impressum für einen Anbieter ohne Sitz in der EU.

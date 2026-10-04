@@ -101,7 +101,7 @@ def create_app(
     legal_dir = Path(legal_dir or os.environ.get("EINVOICE_LEGAL_DIR", "legal"))
     contact_email = os.environ.get("EINVOICE_CONTACT_EMAIL", "")
 
-    app = FastAPI(title="E-Rechnung für Stripe", docs_url=None, redoc_url=None)
+    app = FastAPI(title="E-Rechnungsbote", docs_url=None, redoc_url=None)
     app.state.store = store
 
     def render(request: Request, template: str, status_code: int = 200, **context) -> HTMLResponse:
@@ -226,7 +226,8 @@ def create_app(
             msg.set_content(
                 "Hallo,\n\nbitte bestätigen Sie Ihre Anmeldung zur Warteliste:\n"
                 f"{base_url}/warteliste/bestaetigen/{token}\n\n"
-                "Wenn Sie sich nicht angemeldet haben, ignorieren Sie diese E-Mail einfach.\n"
+                "Wenn Sie sich nicht angemeldet haben, ignorieren Sie diese E-Mail einfach.\n\n"
+                "E-Rechnungsbote\n"
             )
             mailer.send(msg)
         return render(

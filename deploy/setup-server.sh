@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # One-time setup of a fresh Ubuntu 24.04 server (e.g. Hetzner Cloud CX23).
-# Usage, as root:  DOMAIN=example.de bash setup-server.sh
+# Usage, as root:  bash setup-server.sh   (DOMAIN defaults to erechnungsbote.de)
 # Private repository: REPO_URL=https://<token>@github.com/<owner>/<repo>.git (read-only token)
 # Re-running is safe: it updates the code and restarts the service.
 set -euo pipefail
 
-: "${DOMAIN:?set DOMAIN, e.g. DOMAIN=example.de}"
+DOMAIN="${DOMAIN:-erechnungsbote.de}"
 REPO_URL="${REPO_URL:-https://github.com/satishkodidela/AgentEarning.git}"
 # Until the work is merged, the code lives on this branch.
 BRANCH="${BRANCH:-claude/determined-lovelace-gxddxl}"
@@ -37,7 +37,7 @@ python3 -m venv "$APP_DIR/.venv"
 if [ ! -f "$ENV_FILE" ]; then
   install -m 600 "$APP_DIR/deploy/einvoice-bridge.env.example" "$ENV_FILE"
   secret="$("$APP_DIR/.venv/bin/einvoice-bridge" secret)"
-  sed -i "s|^EINVOICE_SECRET_KEY=.*|EINVOICE_SECRET_KEY=$secret|; s|example.de|$DOMAIN|g" "$ENV_FILE"
+  sed -i "s|^EINVOICE_SECRET_KEY=.*|EINVOICE_SECRET_KEY=$secret|; s|erechnungsbote.de|$DOMAIN|g" "$ENV_FILE"
   echo "Created $ENV_FILE – add the SMTP credentials, then: systemctl restart einvoice-bridge"
 fi
 

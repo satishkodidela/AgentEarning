@@ -1,4 +1,4 @@
-# Stripe App: E-Rechnung (OAuth)
+# Stripe App: E-Rechnungsbote (OAuth)
 
 This folder is the Stripe App definition. The app has no Dashboard UI; Stripe
 only handles the install and permissions, and everything else happens on
@@ -8,10 +8,11 @@ the website. The install flow itself lives in the web app
 
 ## One-time setup in your Stripe account
 
-1. Replace `de.example.erechnung` with a reverse-domain ID you own, and
-   `https://example.de/...` with your domain (the redirect URI must match
-   exactly). Stripe does not allow "Stripe" in app names; keep the name
-   descriptive.
+1. The manifest is set up for `erechnungsbote.de`: the app ID is
+   `de.erechnungsbote.app` and the redirect URI is
+   `https://erechnungsbote.de/stripe/oauth/callback`. The redirect URI must
+   match exactly. Stripe does not allow "Stripe" in app names; the app is
+   called "E-Rechnungsbote".
 2. Install the Stripe CLI and its apps plugin, then upload:
 
    ```bash
@@ -25,7 +26,7 @@ the website. The install flow itself lives in the web app
      contains `chnlink_...` and works before the app is published.
    - **Settings**: note the client ID (`ca_...`).
 4. Webhook for all installed accounts: Developers > Webhooks > Add endpoint
-   - URL: `https://<your-domain>/stripe/webhook`
+   - URL: `https://erechnungsbote.de/stripe/webhook`
    - "Listen to events on Connected accounts"
    - Events: `invoice.finalized`, `invoice.paid`, `credit_note.created`,
      `credit_note.voided`, `account.application.deauthorized`

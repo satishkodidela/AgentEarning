@@ -1,12 +1,12 @@
 {
-  "id": "de.example.erechnung",
+  "id": "de.erechnungsbote.app",
   "version": "0.1.0",
-  "name": "E-Rechnung: XRechnung & ZUGFeRD",
+  "name": "E-Rechnungsbote",
   "icon": "./icon.png",
   "distribution_type": "public",
   "stripe_api_access_type": "oauth",
   "allowed_redirect_uris": [
-    "https://example.de/stripe/oauth/callback"
+    "https://erechnungsbote.de/stripe/oauth/callback"
   ],
   "permissions": [
     {

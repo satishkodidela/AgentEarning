@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}E-Rechnung für Stripe{% endblock %}</title>
+<title>{% block title %}E-Rechnungsbote – E-Rechnungen aus Stripe{% endblock %}</title>
 <meta name="description" content="{% block description %}E-Rechnungen (XRechnung, ZUGFeRD) automatisch aus Stripe erzeugen und kostenlos prüfen – nach den offiziellen KoSIT-Regeln.{% endblock %}">
 <style>
 :root { --ink:#1b1f24; --muted:#5b6470; --line:#e3e6ea; --bg:#ffffff; --soft:#f5f7f9; --accent:#1f5fbf; --ok:#17733a; --warn:#9a5b00; --err:#b3261e; }
@@ -57,8 +57,8 @@ ul.rules { columns:3 180px; padding-left:18px; }
 </style>
 </head>
 <body>
-<header><div class="wrap"><a href="/">E-Rechnung für Stripe</a><nav><a href="/#pruefen">Prüfen</a><a href="/preise">Preise</a><a href="/regeln">Fehlercodes</a>{% if stripe_app %}<a href="/konto">Konto</a>{% endif %}</nav></div></header>
+<header><div class="wrap"><a href="/">E-Rechnungsbote</a><nav><a href="/#pruefen">Prüfen</a><a href="/preise">Preise</a><a href="/regeln">Fehlercodes</a>{% if stripe_app %}<a href="/konto">Konto</a>{% endif %}</nav></div></header>
 <main><div class="wrap">{% block content %}{% endblock %}</div></main>
-<footer><div class="wrap"><a href="/preise">Preise</a><a href="/agb">AGB</a><a href="/rueckerstattung">Rückerstattung</a><a href="/datenschutz">Datenschutz</a><a href="/impressum">Impressum</a><a href="/kontakt">Kontakt</a><br>Prüfregeln: KoSIT XRechnung 3.0 &amp; CEN EN 16931</div></footer>
+<footer><div class="wrap"><a href="/preise">Preise</a><a href="/agb">AGB</a><a href="/rueckerstattung">Rückerstattung</a><a href="/datenschutz">Datenschutz</a><a href="/impressum">Impressum</a><a href="/kontakt">Kontakt</a><br>E-Rechnungsbote · Prüfregeln: KoSIT XRechnung 3.0 &amp; CEN EN 16931</div></footer>
 </body>
 </html>

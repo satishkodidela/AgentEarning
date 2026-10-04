@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Ihr Konto – E-Rechnung für Stripe{% endblock %}
+{% block title %}Ihr Konto – E-Rechnungsbote{% endblock %}
 {% block content %}
 <h1>{{ account.profile.name if account.profile else "Ihr Konto" }}</h1>
 {% if notice == "eingerichtet" %}<div class="card"><strong>Eingerichtet.</strong> Ab jetzt wird jede neue Stripe-Rechnung automatisch umgewandelt. Ihre letzten Rechnungen werden gerade zur Kontrolle umgewandelt (ohne E-Mail-Versand); laden Sie die Seite in einer Minute neu.</div>

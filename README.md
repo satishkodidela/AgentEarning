@@ -1,4 +1,6 @@
-# E-Rechnung für Stripe (einvoice-bridge)
+# E-Rechnungsbote (einvoice-bridge)
+
+Website: https://erechnungsbote.de
 
 Turns Stripe invoices into German e-invoices that pass the official
 validators, automatically:
@@ -123,8 +125,8 @@ correction:
 ```bash
 export EINVOICE_SECRET_KEY=$(.venv/bin/einvoice-bridge secret)   # encrypts Stripe keys at rest
 export EINVOICE_DATA_DIR=/var/lib/einvoice                        # SQLite + archive
-export EINVOICE_BASE_URL=https://your-domain.de
-export SMTP_HOST=... SMTP_USER=... SMTP_PASSWORD=... SMTP_FROM=rechnung@your-domain.de
+export EINVOICE_BASE_URL=https://erechnungsbote.de
+export SMTP_HOST=... SMTP_USER=... SMTP_PASSWORD=... SMTP_FROM=rechnung@erechnungsbote.de
 
 .venv/bin/einvoice-bridge account-create --profile seller.toml \
   --stripe-key rk_live_... --webhook-secret whsec_...

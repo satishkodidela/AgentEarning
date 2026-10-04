@@ -1,4 +1,4 @@
-# Go-to-market: E-Rechnung für Stripe
+# Go-to-market: E-Rechnungsbote (erechnungsbote.de)
 
 Status: product core built and tested (October 2026). This note answers three
 questions: is it worth building, where to market it, and whether to cold-email
