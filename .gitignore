@@ -5,3 +5,6 @@ build/
 data/
 .pytest_cache/
 .env
+# created by deploy/namecheap/install.sh in the app root
+/passenger_wsgi.py
+/tmp/

@@ -33,6 +33,8 @@ Receiving them has been mandatory since 1 Jan 2025.
 | CLI | `cli.py` | `validate`, `convert`, `fetch`, `account-create`, `secret`, `serve` |
 | Research | `reports/`, `research_notes/` | Market research behind the product choice |
 | Go-to-market | `docs/go-to-market.md` | Where to market, what not to do (cold email in Germany), pricing, kill criteria |
+| Go live | `docs/go-live-checklist.md` | The ordered steps from development site to first paying customer |
+| Namecheap dev server | `docs/deploy-namecheap.md`, `deploy/namecheap/` | cPanel Python app (Passenger), PositiveSSL, Private Email, one-command install |
 | Launch setup | `docs/launch-setup.md`, `deploy/` | Costs, domain/server/e-mail/Paddle steps, DNS records, lawyer e-mail, one-command server setup |
 
 ## Quick start
@@ -40,7 +42,7 @@ Receiving them has been mandatory since 1 Jan 2025.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest                      # 111 tests, incl. official KoSIT samples
+.venv/bin/pytest                      # 114 tests, incl. official KoSIT samples
 
 # validate any XRechnung / ZUGFeRD file
 .venv/bin/einvoice-bridge validate rechnung.xml rechnung.pdf
@@ -119,6 +121,19 @@ correction:
   proration.
 - Accounts created with the CLI get an operator-assigned plan (`--plan`,
   default `business`) without Paddle, for beta customers.
+
+## Checking a server: `einvoice-bridge doctor`
+
+Run it on the server with the env file loaded. It checks:
+- Python version
+- encryption key and database
+- HTTPS address and legal pages
+- the KoSIT/CEN validator and PDF generation
+- SMTP (`--smtp` logs in; `--send-test-to` also sends a test mail)
+- Stripe App and Paddle settings, including test/live mix-ups
+
+It prints one line per check and never prints secrets. The exit code is 1
+if anything is broken.
 
 ## Running the service
 

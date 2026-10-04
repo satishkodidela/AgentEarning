@@ -17,12 +17,15 @@ dependencies = [
     "jinja2>=3.1",
     "python-multipart>=0.0.9",
     "stripe>=12",
+    "httpx>=0.27",
     "cryptography>=42",
     "uvicorn[standard]>=0.29",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "httpx>=0.27"]
+# cPanel / Phusion Passenger hosting speaks WSGI; a2wsgi adapts the ASGI app.
+shared-hosting = ["a2wsgi>=1.10"]
 
 [project.scripts]
 einvoice-bridge = "einvoice_bridge.cli:main"

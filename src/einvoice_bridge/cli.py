@@ -125,6 +125,14 @@ def cmd_account_create(args) -> int:
     return 0
 
 
+def cmd_doctor(args) -> int:
+    from .doctor import run
+
+    report = run(smtp=args.smtp, send_test_to=args.send_test_to)
+    report.print()
+    return 1 if report.failed else 0
+
+
 def cmd_secret(_args) -> int:
     from cryptography.fernet import Fernet
 
@@ -175,6 +183,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Tarif ohne Paddle-Abo, z. B. für Beta-Kunden (Standard: business)",
     )
     p.set_defaults(func=cmd_account_create)
+
+    p = sub.add_parser("doctor", help="Server-Konfiguration vor dem Livegang prüfen")
+    p.add_argument("--smtp", action="store_true", help="Anmeldung am SMTP-Server testen")
+    p.add_argument("--send-test-to", metavar="EMAIL", help="zusätzlich eine Test-E-Mail senden")
+    p.set_defaults(func=cmd_doctor)
 
     p = sub.add_parser("secret", help="Schlüssel für EINVOICE_SECRET_KEY erzeugen")
     p.set_defaults(func=cmd_secret)
