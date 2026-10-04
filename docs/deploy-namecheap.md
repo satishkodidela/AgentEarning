@@ -39,24 +39,37 @@ Do this **before** creating the Python app (step 4).
    tab too, not in cPanel's Zone Editor.
 2. Wait until `http://erechnungsbote.de` shows the default hosting page.
    This usually takes 5–30 minutes.
-3. **SSL.** Go to Dashboard > SSL Certificates > PositiveSSL > Activate, and
-   choose the cPanel auto-installer. Once the domain points to the hosting,
-   it places the validation file and installs the certificate by itself,
-   within about 25 minutes.
-   - **If it stays PENDING after 30–40 minutes**, use the manual method:
-     1. Download the validation file on the SSL page.
-     2. In cPanel > File Manager (Settings > "Show hidden files"), open
-        `public_html` and create `.well-known/pki-validation/`. Upload the
-        file into it.
-     3. Open the `http://erechnungsbote.de/.well-known/pki-validation/….txt`
-        link shown on the SSL page. It must show the file content.
-     4. Click **Verify**.
-4. When the status is **ACTIVE**, go to cPanel > Domains and switch on
-   **Force HTTPS Redirect** for `erechnungsbote.de`.
+3. **SSL, with DNS validation so that `www` is included.** File-upload
+   (HTTP) validation only covers `erechnungsbote.de`. Browsers then warn on
+   `www.erechnungsbote.de`, and cPanel's Force HTTPS switch stays grey.
+   Namecheap's "server-side automation" (SSL Manager) also issues the bare
+   domain only. Use the manual route:
+   1. cPanel > SSL/TLS > **Requests** > generate a new request with a new
+      2048-bit RSA key. Enter `erechnungsbote.de` and
+      `www.erechnungsbote.de`, one per line. Copy the
+      `-----BEGIN CERTIFICATE REQUEST-----` block. It is not secret. The
+      private key stays on the server.
+   2. Namecheap > SSL Certificates > Activate (or **Reissue**) > **Manage
+      SSL manually**. Paste the request and choose **DNS (CNAME)**
+      validation.
+   3. In Advanced DNS, add the CNAME record it shows. In **Host**, enter only
+      the part before `.erechnungsbote.de`. The value is `dcv.ssl.com`.
+      Wait 10–60 minutes, then click **Verify**.
+   4. When the status is ACTIVE, download the zip with the `.crt` and
+      `.ca-bundle` files. There is no key in it, and that is correct.
+   5. cPanel > SSL/TLS > **Installation**: paste the `.crt` and click
+      **Autofill by Certificate**, not "by Domain". This fills the private
+      key from the server. Check that the Domains line shows both names,
+      then click **Install**.
+4. When SSL/TLS Status shows both names green, go to cPanel > Domains and
+   switch on **Force HTTPS Redirect** for `erechnungsbote.de`.
 
-The app later serves `/.well-known/` files from `~/public_html/.well-known`
-itself (`EINVOICE_WELL_KNOWN_DIR`). This means validation and next year's
-renewal keep working after the Python app takes over the domain.
+Certificates now last about 200 days (the CA/B Forum limit since March
+2026). Set a reminder to reissue about two weeks before the expiry date.
+The reissue is free within the subscription. The DNS route works the same
+way after the Python app has taken over the domain. HTTP validation files
+are still served from `~/public_html/.well-known`
+(`EINVOICE_WELL_KNOWN_DIR`).
 
 ## 2. E-mail with Private Email (15 min)
 
@@ -67,7 +80,8 @@ renewal keep working after the Python app takes over the domain.
 2. **DNS** (where your nameservers are managed, see step 1.1):
    - **If the domain uses Namecheap BasicDNS:** go to Advanced DNS > Mail
      Settings and choose **Private Email**. Namecheap adds the MX and SPF
-     records itself.
+     records itself. Add the `_dmarc` TXT record from the table below
+     under Host Records.
    - **If records are edited in cPanel Zone Editor:** add them by hand:
 
      | Type | Name | Value |
@@ -75,13 +89,22 @@ renewal keep working after the Python app takes over the domain.
      | MX | `@` | `mx1.privateemail.com` (priority 10) |
      | MX | `@` | `mx2.privateemail.com` (priority 10) |
      | TXT | `@` | `v=spf1 include:spf.privateemail.com ~all` |
-     | TXT | DKIM (selector as shown in Private Email settings) | copy the value Private Email shows |
+     | TXT | DKIM host as shown in Private Email settings | copy the value Private Email shows |
      | TXT | `_dmarc` | `v=DMARC1; p=none; rua=mailto:dmarc@erechnungsbote.de` |
 
+   - **DKIM, both cases:** BasicDNS is supposed to add it automatically,
+     but it may be missing. Then Gmail's "Show original" says
+     `DKIM: 'FAIL'`. Go to Dashboard > Private Email > Manage > **Show
+     DKIM**, and add a TXT record with the host it shows and the whole
+     value on one line. The host is `privateemail._domainkey` for
+     subscriptions since June 2026, `default._domainkey` before that.
    - Keep only **one** SPF record. If cPanel's own mail routing is set to
      "Local", set it to **Remote** (cPanel > Email Routing). Otherwise mail
      to your own domain stays on the hosting server.
 3. Note the `rechnung@` password; it goes into the server config in step 4.
+4. **Test:** log in at privateemail.com as `rechnung@`, send a mail to a
+   Gmail address, and open it with ⋮ > **Show original**. SPF, DKIM and DMARC
+   must all say PASS.
 
 ## 3. Get the code onto the server (10 min)
 
