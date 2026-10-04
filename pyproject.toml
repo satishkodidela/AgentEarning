@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "einvoice-bridge"
+version = "0.1.0"
+description = "Turn Stripe invoices into validated German e-invoices (XRechnung, ZUGFeRD)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "lxml>=5",
+    "saxonche>=12.5",
+    "factur-x>=3.0",
+    "fpdf2>=2.7",
+    "fastapi>=0.110",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    "stripe>=10",
+    "uvicorn[standard]>=0.29",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[project.scripts]
+einvoice-bridge = "einvoice_bridge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+einvoice_bridge = [
+    "validation/artifacts/**/*",
+    "web/templates/*",
+    "web/static/*",
+    "fonts/*",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

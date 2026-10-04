@@ -1,0 +1,15 @@
+{
+  "xrechnung": "3.0.2",
+  "xrechnung_schematron": "2.6.0",
+  "en16931_validation": "validation-1.3.16",
+  "peppol_bis_rules": "2026-Q2-QA2",
+  "schxslt": "1.10.1",
+  "commits": {
+    "en16931": "a519ba02a59e2775436428f57ee96899feb1da8c",
+    "xr-schematron": "217c6cbf8ac9a99d780cefb4f044b2c2778d4744",
+    "peppol-bis": "806866bd2bd91d7e9623b68f08164e8fbe9e67a0",
+    "ph-ubl": "5c607671d879dbf4e9689077b110c838ccebc4a4",
+    "ph-xsds": "e0b4f5ea103223ff5a76881104d983f2cbe67a52",
+    "schxslt": "1.10.1"
+  }
+}
