@@ -2,7 +2,7 @@
 __pycache__/
 *.egg-info/
 build/
-data/
+/data/
 .pytest_cache/
 .env
 # created by deploy/namecheap/install.sh in the app root

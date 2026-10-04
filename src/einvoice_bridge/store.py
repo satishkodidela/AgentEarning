@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import secrets
 import sqlite3
 import threading
@@ -161,11 +162,14 @@ class Store:
 
     @property
     def db(self) -> sqlite3.Connection:
+        # A connection inherited through fork (LiteSpeed forks workers after
+        # import) must not be reused; open a fresh one in the child.
         conn = getattr(self._local, "conn", None)
-        if conn is None:
+        if conn is None or self._local.pid != os.getpid():
             conn = sqlite3.connect(self.path, timeout=15)
             conn.row_factory = sqlite3.Row
             self._local.conn = conn
+            self._local.pid = os.getpid()
         return conn
 
     def _migrate(self) -> None:
