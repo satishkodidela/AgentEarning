@@ -191,6 +191,8 @@ def test_connect_webhook_converts_invoices_of_installed_account(app_client, stor
     gateway.recent_invoices = lambda limit: []  # no first-run backfill here
     install(app_client)
     app_client.post("/konto/einrichten", data={**PROFILE_FORM, "send_to_customer": "1"})
+    store.db.execute("UPDATE accounts SET plan = 'business'")  # customer delivery is a Business feature
+    store.db.commit()
 
     event = connect_event("invoice.paid", {"id": "in_paid", "collection_method": "charge_automatically"})
     body, headers = signed(event, CONNECT_SECRET)

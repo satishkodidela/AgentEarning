@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Tarif – E-Rechnung für Stripe{% endblock %}
+{% block content %}
+<p class="muted"><a href="/konto">Konto</a> › Tarif</p>
+<h1>Tarif und Abrechnung</h1>
+{% if status == "danke" %}<div class="card"><strong>Danke!</strong> Paddle bestätigt die Bestellung in wenigen Sekunden. Laden Sie die Seite dann neu; zurückgehaltene Rechnungen werden automatisch umgewandelt.</div>
+{% elif status == "gewechselt" %}<div class="card">Der Tarifwechsel ist beauftragt und erscheint hier, sobald Paddle ihn bestätigt.</div>{% endif %}
+
+<div class="card">
+  Aktueller Tarif: <strong>{{ current.name }}</strong>
+  {% if account.subscription_status == "trialing" %}<span class="badge ok">Testphase</span>
+  {% elif account.subscription_status == "past_due" %}<span class="badge warn">Zahlung offen</span>{% endif %}<br>
+  Diesen Monat: {{ usage.used }} von {{ usage.plan.monthly_limit }} E-Rechnungen
+  {% if usage.exhausted %}<span class="badge err">Limit erreicht</span>{% endif %}
+  {% if account.cancel_at %}<br><span class="muted">Gekündigt zum {{ account.cancel_at[:10] }}</span>
+  {% elif account.period_ends_at and account.paddle_subscription_id %}<br><span class="muted">Aktueller Zeitraum bis {{ account.period_ends_at[:10] }}</span>{% endif %}
+  {% if account.paddle_customer_id %}
+  <form method="post" action="/konto/abo/verwalten" class="actions"><button class="link" type="submit">Kundenportal: Zahlungsmittel, Rechnungen, Kündigung</button></form>
+  {% endif %}
+</div>
+
+<div class="plans">
+{% for key in ["free", "starter", "business"] %}{% set p = plans[key] %}
+  <div class="card">
+    <strong>{{ p.name }}</strong>
+    <div class="price">{{ p.price_eur }} €{% if p.price_eur %}<span class="muted"> / Monat</span>{% endif %}</div>
+    <span class="muted">Bis {{ p.monthly_limit }} E-Rechnungen pro Monat{% if p.customer_delivery %} · Versand direkt an Ihre Kunden{% endif %}</span>
+    <p>
+    {% if key == current.key %}<span class="badge ok">Ihr Tarif</span>
+    {% elif key == "free" %}
+    {% elif account.paddle_subscription_id and account.subscription_status in ("active", "trialing", "past_due") %}
+      <form method="post" action="/konto/abo/wechseln"><input type="hidden" name="plan" value="{{ key }}"><button class="btn" type="submit">Zu {{ p.name }} wechseln</button></form>
+    {% elif checkout and checkout.prices[key] %}
+      <button class="btn" type="button" data-price="{{ checkout.prices[key] }}">14 Tage kostenlos testen</button>
+    {% else %}<span class="muted">Bald verfügbar</span>{% endif %}
+    </p>
+  </div>
+{% endfor %}
+  <div class="card">
+    <strong>Kanzlei</strong>
+    <div class="price">auf Anfrage</div>
+    <span class="muted">Mehrere Mandanten für Steuerberater und Buchhaltungsbüros</span>
+    <p>{% if contact_email %}<a href="mailto:{{ contact_email }}?subject=Kanzlei-Tarif">Anfragen</a>{% else %}<a href="/kontakt">Anfragen</a>{% endif %}</p>
+  </div>
+</div>
+<p class="muted">Preise zzgl. Umsatzsteuer, monatlich kündbar. Testphase: 14 Tage kostenlos, danach monatliche Abrechnung, sofern Sie nicht vorher kündigen. Unser Bestellprozess wird von unserem Online-Händler Paddle.com abgewickelt, der Merchant of Record für alle Bestellungen ist.</p>
+
+{% if checkout %}
+<script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
+<script>
+  {% if checkout.sandbox %}Paddle.Environment.set("sandbox");{% endif %}
+  Paddle.Initialize({ token: {{ checkout.client_token|tojson }} });
+  document.querySelectorAll("button[data-price]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      Paddle.Checkout.open({
+        items: [{ priceId: button.dataset.price, quantity: 1 }],
+        customer: { email: {{ checkout.email|tojson }} },
+        customData: {{ checkout.custom_data|tojson }},
+        settings: { displayMode: "overlay", locale: "de", successUrl: {{ (base_url ~ "/konto/abo?status=danke")|tojson }} }
+      });
+    });
+  });
+</script>
+{% endif %}
+{% endblock %}

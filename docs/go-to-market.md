@@ -123,7 +123,7 @@ the terms, privacy policy and marketing setup before launch.
 | Free | €0 | Validator, rule pages, 3 conversions/month |
 | Starter | €9/month | Up to 30 invoices/month, ZUGFeRD + XRechnung, archive, fix-list e-mails |
 | Business | €29/month | Up to 300 invoices/month, sending to customers, Leitweg-ID handling |
-| Kanzlei | €79/month | Multi-client dashboard for bookkeepers and tax advisors |
+| Kanzlei | on request | Multi-client dashboard for bookkeepers and tax advisors (not built yet) |
 
 Use a 14-day trial that requires a card; card-required trials convert far
 better than open freemium. About 100–150 paying accounts at a blended

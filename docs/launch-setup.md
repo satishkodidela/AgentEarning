@@ -81,6 +81,42 @@ Use only **one** SPF record. Raise DMARC to `p=quarantine` after two weeks
 of clean reports. Gmail rejects non-compliant bulk mail, and the e-invoices
 must not land in spam.
 
+## Paddle billing setup
+
+Do this in the **sandbox** first (sandbox-vendors.paddle.com). Repeat it in
+the live account once Paddle has approved your domain.
+
+1. **Catalog > Products:** create "E-Rechnung Starter" and "E-Rechnung
+   Business".
+   - Add a monthly price of €9 and €29, tax **exclusive** (the site says
+     "zzgl. USt.").
+   - Give each price a **14-day trial**.
+   - Optional: yearly prices.
+2. **Developer tools > Authentication:**
+   - Create a **client-side token** (for Paddle.js).
+   - Create an **API key** that can create customer portal sessions and
+     update subscriptions.
+3. **Developer tools > Notifications:** add a destination
+   `https://<your-domain>/paddle/webhook` with the events
+   `subscription.created`, `.updated`, `.activated`, `.trialing`,
+   `.past_due`, `.paused`, `.resumed` and `.canceled`. Copy its secret key.
+4. **Checkout > Checkout settings:** set the default payment link to
+   `https://<your-domain>/bezahlen`. Paddle sends customers there to pay,
+   for example after a failed renewal.
+5. Put the values into `/etc/einvoice-bridge.env`:
+   - `PADDLE_ENVIRONMENT=sandbox` (or `production`)
+   - `PADDLE_CLIENT_TOKEN`, `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET`
+   - `PADDLE_PRICES_STARTER`, `PADDLE_PRICES_BUSINESS` (comma-separated
+     price IDs; the first one is offered at checkout)
+
+   Then run `systemctl restart einvoice-bridge`.
+6. **Test:**
+   - Install the Stripe App on a test account, open **Konto > Tarif und
+     Abrechnung** and start a trial with Paddle's sandbox test card
+     (4242 4242 4242 4242).
+   - The plan should switch within seconds.
+   - Then try "Zu Business wechseln" and the customer portal.
+
 ## Payment provider decision
 
 | | Paddle | Dodo Payments | Lemon Squeezy |

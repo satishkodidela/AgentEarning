@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Bezahlen – E-Rechnung für Stripe{% endblock %}
+{% block content %}
+<h1>Bezahlen</h1>
+<p>Der sichere Bezahlvorgang von Paddle öffnet sich automatisch. Falls nicht, nutzen Sie bitte den Link aus Ihrer E-Mail erneut oder <a href="/kontakt">kontaktieren Sie uns</a>.</p>
+<p class="muted">Paddle.com ist unser Online-Händler (Merchant of Record) und wickelt die Zahlung ab.</p>
+<script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
+<script>
+  {% if sandbox %}Paddle.Environment.set("sandbox");{% endif %}
+  Paddle.Initialize({ token: {{ paddle_token|tojson }}, checkout: { settings: { locale: "de", displayMode: "overlay" } } });
+</script>
+{% endblock %}

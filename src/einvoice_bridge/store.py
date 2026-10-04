@@ -67,11 +67,27 @@ ACCOUNT_COLUMNS = {
     "access_token": "TEXT",
     "refresh_token": "TEXT",
     "token_expires_at": "INTEGER NOT NULL DEFAULT 0",
+    # billing (Paddle)
+    "plan": "TEXT NOT NULL DEFAULT 'free'",
+    "paddle_customer_id": "TEXT",
+    "paddle_subscription_id": "TEXT",
+    "subscription_status": "TEXT",
+    "period_ends_at": "TEXT",
+    "cancel_at": "TEXT",
+    "billing_event_at": "TEXT",  # occurred_at of the last applied Paddle event
+    "limit_notice_month": "TEXT",  # YYYY-MM when the seller was told about the limit
+}
+DOCUMENT_COLUMNS = {
+    "billable": "INTEGER NOT NULL DEFAULT 1",  # counts towards the monthly plan limit
 }
 
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _parse_time(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 @dataclass
@@ -89,6 +105,14 @@ class Account:
     access_token: str | None = None
     refresh_token: str | None = None
     token_expires_at: int = 0
+    plan: str = "free"
+    paddle_customer_id: str | None = None
+    paddle_subscription_id: str | None = None
+    subscription_status: str | None = None
+    period_ends_at: str | None = None
+    cancel_at: str | None = None
+    billing_event_at: str | None = None
+    limit_notice_month: str | None = None
 
     @property
     def is_oauth(self) -> bool:
@@ -117,7 +141,8 @@ class Store:
         self.data_dir = data_dir
         self.archive = data_dir / "archive"
         self.archive.mkdir(parents=True, exist_ok=True)
-        self.fernet = Fernet(secret_key.encode() if isinstance(secret_key, str) else secret_key)
+        self.secret = secret_key if isinstance(secret_key, str) else secret_key.decode()
+        self.fernet = Fernet(self.secret.encode())
         self.path = data_dir / "einvoice.sqlite3"
         # One connection per thread: webhooks and the first-run backfill run in
         # background threads, and a sqlite3 connection must not be shared.
@@ -136,11 +161,12 @@ class Store:
         return conn
 
     def _migrate(self) -> None:
-        existing = {row["name"] for row in self.db.execute("PRAGMA table_info(accounts)")}
         with self.db:
-            for column, ddl in ACCOUNT_COLUMNS.items():
-                if column not in existing:
-                    self.db.execute(f"ALTER TABLE accounts ADD COLUMN {column} {ddl}")
+            for table, columns in (("accounts", ACCOUNT_COLUMNS), ("documents", DOCUMENT_COLUMNS)):
+                existing = {row["name"] for row in self.db.execute(f"PRAGMA table_info({table})")}
+                for column, ddl in columns.items():
+                    if column not in existing:
+                        self.db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
             self.db.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS accounts_stripe_account"
                 " ON accounts (stripe_account_id, livemode) WHERE stripe_account_id IS NOT NULL"
@@ -149,7 +175,12 @@ class Store:
     # accounts -------------------------------------------------------------
 
     def create_account(
-        self, profile: SellerProfile, stripe_api_key: str, webhook_secret: str, send_to_customer: bool = False
+        self,
+        profile: SellerProfile,
+        stripe_api_key: str,
+        webhook_secret: str,
+        send_to_customer: bool = False,
+        plan: str = "free",
     ) -> Account:
         account = Account(
             id=secrets.token_urlsafe(12),
@@ -158,11 +189,12 @@ class Store:
             webhook_secret=webhook_secret,
             profile=profile,
             send_to_customer=send_to_customer,
+            plan=plan,
         )
         with self.db:
             self.db.execute(
                 "INSERT INTO accounts (id, dashboard_token, stripe_api_key, webhook_secret, profile_json,"
-                " send_to_customer, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                " send_to_customer, created_at, plan) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     account.id,
                     account.dashboard_token,
@@ -171,6 +203,7 @@ class Store:
                     json.dumps(profile.to_dict(), ensure_ascii=False),
                     int(send_to_customer),
                     now(),
+                    plan,
                 ),
             )
         return account
@@ -245,6 +278,54 @@ class Store:
                 (json.dumps(profile.to_dict(), ensure_ascii=False), int(send_to_customer), account_id),
             )
 
+    def account_by_paddle(self, subscription_id: str | None, customer_id: str | None) -> Account | None:
+        for column, value in (("paddle_subscription_id", subscription_id), ("paddle_customer_id", customer_id)):
+            if value:
+                row = self.db.execute(f"SELECT * FROM accounts WHERE {column} = ?", (value,)).fetchone()
+                if row:
+                    return self._account(row)
+        return None
+
+    def apply_subscription(
+        self,
+        account_id: str,
+        occurred_at: str,
+        *,
+        plan: str,
+        status: str,
+        customer_id: str | None,
+        subscription_id: str,
+        period_ends_at: str | None,
+        cancel_at: str | None,
+    ) -> bool:
+        """Store a Paddle subscription state unless a newer event was applied already.
+
+        Paddle does not guarantee delivery order, so each event carries its
+        occurred_at and older ones are ignored. Returns whether it was applied.
+        """
+        row = self.db.execute("SELECT billing_event_at FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        if row and row["billing_event_at"] and _parse_time(row["billing_event_at"]) > _parse_time(occurred_at):
+            return False
+        with self.db:
+            self.db.execute(
+                "UPDATE accounts SET plan = ?, subscription_status = ?, paddle_customer_id = COALESCE(?, paddle_customer_id),"
+                " paddle_subscription_id = ?, period_ends_at = ?, cancel_at = ?, billing_event_at = ? WHERE id = ?",
+                (plan, status, customer_id, subscription_id, period_ends_at, cancel_at, occurred_at, account_id),
+            )
+        return True
+
+    def set_limit_notice(self, account_id: str, month: str) -> None:
+        with self.db:
+            self.db.execute("UPDATE accounts SET limit_notice_month = ? WHERE id = ?", (month, account_id))
+
+    def billable_count(self, account_id: str, month: str) -> int:
+        """Generated, billable e-invoices in a month ("YYYY-MM", UTC)."""
+        return self.db.execute(
+            "SELECT COUNT(*) FROM documents WHERE account_id = ? AND status = 'generated' AND billable = 1"
+            " AND substr(created_at, 1, 7) = ?",
+            (account_id, month),
+        ).fetchone()[0]
+
     def account_by_stripe_id(self, stripe_account_id: str, livemode: bool) -> Account | None:
         row = self.db.execute(
             "SELECT * FROM accounts WHERE stripe_account_id = ? AND livemode = ?",
@@ -276,6 +357,14 @@ class Store:
             access_token=self._decrypt(row["access_token"]) if row["access_token"] else None,
             refresh_token=self._decrypt(row["refresh_token"]) if row["refresh_token"] else None,
             token_expires_at=row["token_expires_at"],
+            plan=row["plan"],
+            paddle_customer_id=row["paddle_customer_id"],
+            paddle_subscription_id=row["paddle_subscription_id"],
+            subscription_status=row["subscription_status"],
+            period_ends_at=row["period_ends_at"],
+            cancel_at=row["cancel_at"],
+            billing_event_at=row["billing_event_at"],
+            limit_notice_month=row["limit_notice_month"],
         )
 
     def _encrypt(self, value: str) -> str:
@@ -307,6 +396,7 @@ class Store:
         status: str,
         problems: list[dict],
         files: dict[str, bytes] | None = None,
+        billable: bool = True,
     ) -> Document:
         hashes = {}
         if files:
@@ -327,9 +417,12 @@ class Store:
                 (account_id, stripe_invoice_id),
             )
             self.db.execute(
-                "INSERT INTO documents (account_id, stripe_invoice_id, number, status, problems_json, files_json, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (account_id, stripe_invoice_id, number, status, json.dumps(problems, ensure_ascii=False), json.dumps(hashes), now()),
+                "INSERT INTO documents (account_id, stripe_invoice_id, number, status, problems_json, files_json,"
+                " created_at, billable) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    account_id, stripe_invoice_id, number, status, json.dumps(problems, ensure_ascii=False),
+                    json.dumps(hashes), now(), int(billable),
+                ),
             )
         return self.document(account_id, stripe_invoice_id)
 

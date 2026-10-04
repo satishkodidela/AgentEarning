@@ -105,7 +105,9 @@ def cmd_account_create(args) -> int:
         for p in problems:
             print(f"  [FEHLER] {p}")
         return 1
-    account = _store().create_account(profile, args.stripe_key, args.webhook_secret, args.send_to_customer)
+    account = _store().create_account(
+        profile, args.stripe_key, args.webhook_secret, args.send_to_customer, plan=args.plan
+    )
     base = os.environ.get("EINVOICE_BASE_URL", "http://localhost:8000").rstrip("/")
     print(f"Konto angelegt: {account.id}")
     print(f"Webhook-URL (in Stripe eintragen): {base}/stripe/webhook/{account.id}")
@@ -159,6 +161,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--stripe-key", required=True, help="eingeschränkter Schlüssel mit Lesezugriff")
     p.add_argument("--webhook-secret", required=True, help="whsec_… des Stripe-Endpunkts")
     p.add_argument("--send-to-customer", action="store_true", help="E-Rechnung direkt an Kunden senden")
+    p.add_argument(
+        "--plan", default="business", choices=["free", "starter", "business"],
+        help="Tarif ohne Paddle-Abo, z. B. für Beta-Kunden (Standard: business)",
+    )
     p.set_defaults(func=cmd_account_create)
 
     p = sub.add_parser("secret", help="Schlüssel für EINVOICE_SECRET_KEY erzeugen")

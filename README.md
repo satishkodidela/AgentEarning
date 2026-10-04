@@ -26,6 +26,7 @@ Receiving them has been mandatory since 1 Jan 2025.
 | Stripe mapper | `sources/stripe.py` | Stripe Invoice → model, or a German fix list of what is missing |
 | Pipeline | `service.py`, `store.py` | Webhook → convert → validate → write-once archive (SHA-256) → email |
 | Web app | `web/` | Free validator (lead magnet), 1,600+ rule pages (SEO), Stripe App install + onboarding, webhooks, customer dashboard, double-opt-in waitlist |
+| Billing | `billing.py` | Plans and monthly limits, Paddle checkout (14-day trial), signed webhooks, customer portal, plan changes |
 | Stripe App | `stripe_oauth.py`, `stripe-app/` | OAuth install link, code exchange, token refresh, Connect webhook, uninstall handling; app manifest and setup guide |
 | CLI | `cli.py` | `validate`, `convert`, `fetch`, `account-create`, `secret`, `serve` |
 | Research | `reports/`, `research_notes/` | Market research behind the product choice |
@@ -37,7 +38,7 @@ Receiving them has been mandatory since 1 Jan 2025.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest                      # 83 tests, incl. official KoSIT samples
+.venv/bin/pytest                      # 101 tests, incl. official KoSIT samples
 
 # validate any XRechnung / ZUGFeRD file
 .venv/bin/einvoice-bridge validate rechnung.xml rechnung.pdf
@@ -69,6 +70,30 @@ From then on, invoice events for every installed account arrive at one
 Connect webhook (`/stripe/webhook`). Access tokens (1 hour) are refreshed
 automatically. Signing in again is the same OAuth round trip, so there are
 no passwords. Uninstalling in Stripe deletes the tokens and keeps the archive.
+
+## Plans and billing (Paddle)
+
+| Plan | Price | E-invoices per month | Sent straight to customers |
+|---|---|---|---|
+| Kostenlos | €0 | 3 | no (seller gets them) |
+| Starter | €9 | 30 | no |
+| Business | €29 | 300 | yes |
+
+- Paid plans start with a 14-day trial in Paddle's checkout overlay
+  (`/konto/abo`). Paddle is the merchant of record: it charges, invoices and
+  handles VAT.
+- Subscription state comes only from signed Paddle webhooks
+  (`/paddle/webhook`). Events can arrive out of order, so older ones are
+  ignored. `past_due` keeps access while Paddle retries the payment.
+- Over the limit, no invoice is dropped. It is kept as "held back", the
+  seller gets one e-mail per month, and held invoices are converted and
+  delivered automatically after an upgrade.
+- The first-run preview after install does not count towards the limit.
+- "Abo verwalten" opens Paddle's customer portal through a fresh,
+  signed-in session link. Plan switches go through Paddle's API with
+  proration.
+- Accounts created with the CLI get an operator-assigned plan (`--plan`,
+  default `business`) without Paddle, for beta customers.
 
 ## Running the service
 
@@ -123,8 +148,8 @@ SchXslt and rewrites `src/einvoice_bridge/validation/artifacts/`.
   have not been run through veraPDF.
 - The Stripe App must be uploaded and reviewed by Stripe before live installs
   work; test-mode install links work before that.
-- Plans and limits from `/preise` are not enforced yet; billing through
-  Paddle is the next step.
+- The Kanzlei (multi-client) plan is "on request"; the multi-client
+  dashboard is not built yet.
 - Legal pages (`/impressum`, `/datenschutz`, `/agb`, `/rueckerstattung`) are
   placeholders until lawyer-reviewed HTML files are placed in
   `EINVOICE_LEGAL_DIR`; see `docs/launch-setup.md`.

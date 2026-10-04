@@ -50,7 +50,7 @@
 
   <h2>Versand</h2>
   <label class="check"><input type="checkbox" name="send_to_customer" value="1"{% if v.get("send_to_customer") %} checked{% endif %}> E-Rechnungen direkt an meine Kunden senden (sonst erhalten Sie jede E-Rechnung zuerst selbst).</label>
-  <p class="muted">Tipp: erst ohne Versand starten, ein paar E-Rechnungen ansehen, dann einschalten. Bitte schalten Sie dann den PDF-Rechnungsversand von Stripe für diese Kunden ab, damit niemand zwei Rechnungen erhält.</p>
+  <p class="muted">Der Direktversand ist im Tarif Business enthalten; in anderen Tarifen erhalten Sie die E-Rechnung selbst. Tipp: erst ohne Versand starten, ein paar E-Rechnungen ansehen, dann einschalten. Bitte schalten Sie dann den PDF-Rechnungsversand von Stripe für diese Kunden ab, damit niemand zwei Rechnungen erhält.</p>
 
   <p><button class="btn" type="submit">{{ "Speichern" if account.profile else "Einrichtung abschließen" }}</button></p>
 </form>

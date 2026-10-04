@@ -9,6 +9,7 @@ from dataclasses import asdict
 from email.message import EmailMessage
 from typing import Protocol
 
+from .billing import current_month, effective_plan, usage
 from .model import Invoice
 from .pdf import to_zugferd_pdf
 from .sources.stripe import MappingResult, Problem, map_invoice
@@ -168,8 +169,14 @@ def process_invoice(
     gateway: StripeGateway,
     mailer: Mailer,
     deliver: bool = True,
+    billable: bool = True,
+    base_url: str = "",
 ) -> Document:
-    """Convert one Stripe invoice. ``deliver=False`` archives without e-mailing (first-run backfill)."""
+    """Convert one Stripe invoice.
+
+    ``deliver=False`` archives without e-mailing; ``billable=False`` does not
+    count towards the plan's monthly limit (only the one-time first-run backfill).
+    """
     existing = store.document(account.id, invoice_id)
     if existing and existing.status == "generated":
         return existing  # idempotent: Stripe retries webhooks
@@ -178,6 +185,22 @@ def process_invoice(
         # the invoice is retried on its next event or from the dashboard.
         problem = {"field": "seller", "message": "Firmendaten fehlen noch. Bitte Einrichtung abschließen.", "severity": "error"}
         return store.save_document(account.id, invoice_id, None, "blocked", [problem])
+    if billable:
+        used = usage(store, account)
+        if used.exhausted:
+            # Never drop an invoice silently: keep it visible and retry it
+            # automatically when the seller upgrades.
+            problem = {
+                "field": "plan",
+                "message": f"Monatslimit des Tarifs {used.plan.name} erreicht ({used.plan.monthly_limit} E-Rechnungen). "
+                "Nach einem Upgrade wird diese Rechnung automatisch umgewandelt.",
+                "severity": "error",
+            }
+            doc = store.save_document(account.id, invoice_id, None, "blocked", [problem], billable=True)
+            if deliver and account.limit_notice_month != current_month():
+                mailer.send(build_limit_email(account, used.plan.name, used.plan.monthly_limit, base_url))
+                store.set_limit_notice(account.id, current_month())
+            return doc
 
     raw = gateway.invoice(invoice_id)
     paid = raw.get("status") == "paid"
@@ -213,25 +236,59 @@ def process_invoice(
         "generated",
         problems,
         files={"xrechnung.xml": xml, "zugferd.pdf": pdf},
+        billable=billable,
     )
 
     if not deliver:
         return doc
     seller_copy = account.profile.contact.email
-    to = [invoice.buyer.electronic_address] if account.send_to_customer else [seller_copy]
-    bcc = [seller_copy] if account.send_to_customer else []
+    to_customer = account.send_to_customer and effective_plan(account).customer_delivery
+    to = [invoice.buyer.electronic_address] if to_customer else [seller_copy]
+    bcc = [seller_copy] if to_customer else []
     mailer.send(build_delivery_email(invoice, pdf, xml, to, bcc))
     store.mark_delivered(doc.id, ", ".join(to + bcc))
     return store.document(account.id, invoice_id)
 
 
-def backfill(store: Store, account: Account, gateway: StripeGateway, mailer: Mailer, limit: int = 10) -> list[Document]:
-    """Convert the newest invoices right after setup so the dashboard is not empty.
+def backfill(
+    store: Store,
+    account: Account,
+    gateway: StripeGateway,
+    mailer: Mailer,
+    limit: int = 10,
+    billable: bool = False,
+) -> list[Document]:
+    """Convert the newest invoices (archived, not e-mailed).
 
-    Nothing is e-mailed: these invoices were already sent the old way, and
-    sending them again to customers would create duplicates.
+    Right after setup this is a free preview (``billable=False``) so the
+    dashboard is not empty. Run again from the dashboard it counts towards the
+    plan. Nothing is e-mailed: these invoices were already sent the old way,
+    and sending them again to customers would create duplicates.
     """
     return [
-        process_invoice(store, account, raw["id"], gateway, mailer, deliver=False)
+        process_invoice(store, account, raw["id"], gateway, mailer, deliver=False, billable=billable)
         for raw in gateway.recent_invoices(limit)
     ]
+
+
+def retry_limited(store: Store, account: Account, gateway: StripeGateway, mailer: Mailer, base_url: str = "") -> list[Document]:
+    """After an upgrade, convert and deliver invoices that were held back by the old limit."""
+    held = [d for d in store.documents(account.id) if d.status == "blocked" and any(p.get("field") == "plan" for p in d.problems)]
+    results = []
+    for doc in reversed(held):  # oldest first
+        account = store.account(account.id)
+        results.append(process_invoice(store, account, doc.stripe_invoice_id, gateway, mailer, base_url=base_url))
+    return results
+
+
+def build_limit_email(account: Account, plan_name: str, limit: int, base_url: str) -> EmailMessage:
+    msg = EmailMessage()
+    msg["Subject"] = f"Monatslimit erreicht: {limit} E-Rechnungen im Tarif {plan_name}"
+    msg["To"] = account.profile.contact.email
+    msg.set_content(
+        f"Hallo,\n\nIhr Tarif {plan_name} enthält {limit} E-Rechnungen pro Monat, und dieses Limit ist erreicht. "
+        "Weitere Stripe-Rechnungen werden gespeichert, aber erst nach einem Upgrade umgewandelt und zugestellt; "
+        "das passiert dann automatisch.\n\n"
+        f"Tarif wechseln: {base_url}/konto/abo\n"
+    )
+    return msg

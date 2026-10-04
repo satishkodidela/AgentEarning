@@ -53,7 +53,7 @@ def store(tmp_path):
 @pytest.fixture
 def account(store):
     profile = SellerProfile.load(FIXTURES / "seller_profile.toml")
-    return store.create_account(profile, "rk_test_123", WEBHOOK_SECRET, send_to_customer=True)
+    return store.create_account(profile, "rk_test_123", WEBHOOK_SECRET, send_to_customer=True, plan="business")
 
 
 @pytest.fixture

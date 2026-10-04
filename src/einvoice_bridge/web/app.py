@@ -16,6 +16,17 @@ from cryptography.fernet import InvalidToken
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from ..billing import (
+    PAID_PLANS,
+    PLANS,
+    PaddleClient,
+    PaddleConfig,
+    apply_subscription_event,
+    effective_plan,
+    sign_account,
+    usage,
+    verify_paddle_signature,
+)
 from ..service import (
     HANDLED_EVENTS,
     LiveStripeGateway,
@@ -24,6 +35,7 @@ from ..service import (
     StripeGateway,
     backfill,
     process_invoice,
+    retry_limited,
     should_process,
 )
 from ..store import Account, Store
@@ -55,6 +67,8 @@ def create_app(
     legal_dir: Path | str | None = None,
     oauth: StripeOAuth | None = None,
     connect_webhook_secret: str | None = None,
+    paddle: PaddleConfig | None = None,
+    paddle_client: PaddleClient | None = None,
 ) -> FastAPI:
     if store is None:
         data_dir = Path(os.environ.get("EINVOICE_DATA_DIR", "data"))
@@ -68,6 +82,9 @@ def create_app(
     oauth = oauth or StripeOAuth.from_env(base_url)
     connect_webhook_secret = connect_webhook_secret or os.environ.get("STRIPE_CONNECT_WEBHOOK_SECRET")
     secure_cookies = base_url.startswith("https://")
+    paddle = paddle or PaddleConfig.from_env()
+    if paddle and paddle_client is None:
+        paddle_client = PaddleClient(paddle)
 
     def live_gateway(account: Account) -> StripeGateway:
         if account.is_oauth:
@@ -89,7 +106,14 @@ def create_app(
         return TEMPLATES.TemplateResponse(
             request,
             template,
-            {"base_url": base_url, "contact_email": contact_email, "stripe_app": oauth is not None, **context},
+            {
+                "base_url": base_url,
+                "contact_email": contact_email,
+                "stripe_app": oauth is not None,
+                "paddle_enabled": paddle is not None,
+                "plans": PLANS,
+                **context,
+            },
             status_code=status_code,
         )
 
@@ -320,7 +344,7 @@ def create_app(
             and event.get("type") in HANDLED_EVENTS
             and should_process(event["type"], obj)
         ):
-            background.add_task(_run, store, account, obj["id"], gateway_factory, mailer)
+            background.add_task(_run, store, account, obj["id"], gateway_factory, mailer, base_url)
         return {"received": True}
 
     # manual accounts (restricted key + own webhook, set up with the CLI)
@@ -342,7 +366,7 @@ def create_app(
         event = json.loads(payload)
         obj = event.get("data", {}).get("object", {})
         if obj.get("id") and event.get("type") in HANDLED_EVENTS and should_process(event["type"], obj):
-            background.add_task(_run, store, account, obj["id"], gateway_factory, mailer)
+            background.add_task(_run, store, account, obj["id"], gateway_factory, mailer, base_url)
         return {"received": True}
 
     # dashboard (signed-in via Stripe) ------------------------------------------
@@ -354,7 +378,7 @@ def create_app(
             return RedirectResponse("/konto/einrichten", status_code=303)
         return render(
             request, "account.html", account=account, documents=store.documents(account.id),
-            base="/konto", notice=request.query_params.get("hinweis"),
+            base="/konto", notice=request.query_params.get("hinweis"), usage=usage(store, account),
         )
 
     @app.get("/konto/einrichten", response_class=HTMLResponse)
@@ -383,8 +407,80 @@ def create_app(
         account = require_session(request)
         if not account.is_active:
             return RedirectResponse("/konto/einrichten", status_code=303)
-        background.add_task(_backfill, store, account, gateway_factory, mailer)
+        background.add_task(_backfill, store, account, gateway_factory, mailer, True)
         return RedirectResponse("/konto?hinweis=umwandlung", status_code=303)
+
+    # billing (Paddle) --------------------------------------------------------
+
+    @app.get("/konto/abo", response_class=HTMLResponse)
+    def subscription(request: Request):
+        account = require_session(request)
+        if account.profile is None:
+            return RedirectResponse("/konto/einrichten", status_code=303)
+        checkout = None
+        if paddle:
+            checkout = {
+                "client_token": paddle.client_token,
+                "sandbox": paddle.sandbox,
+                "email": account.profile.contact.email,
+                "custom_data": {"account_id": account.id, "account_sig": sign_account(account.id, store.secret)},
+                "prices": {plan: paddle.checkout_price(plan) for plan in PAID_PLANS},
+            }
+        return render(
+            request, "subscription.html", account=account, usage=usage(store, account),
+            current=effective_plan(account), checkout=checkout, status=request.query_params.get("status"),
+        )
+
+    @app.get("/bezahlen", response_class=HTMLResponse)
+    def pay(request: Request):
+        """Paddle's "default payment link": Paddle.js opens the checkout for ?_ptxn=…"""
+        if not paddle:
+            raise HTTPException(404)
+        return render(request, "pay.html", paddle_token=paddle.client_token, sandbox=paddle.sandbox)
+
+    @app.post("/konto/abo/verwalten")
+    def manage_subscription(request: Request):
+        account = require_session(request)
+        if not (paddle_client and account.paddle_customer_id):
+            return RedirectResponse("/konto/abo", status_code=303)
+        try:
+            url = paddle_client.portal_url(account.paddle_customer_id, account.paddle_subscription_id)
+        except Exception:  # noqa: BLE001 - Paddle unreachable; tell the user instead of a 500
+            log.exception("Paddle portal session for %s failed", account.id)
+            return render(
+                request, "message.html", status_code=502, title="Kundenportal nicht erreichbar",
+                text="Paddle ist gerade nicht erreichbar. Bitte versuchen Sie es in ein paar Minuten erneut.",
+            )
+        return RedirectResponse(url, status_code=303)
+
+    @app.post("/konto/abo/wechseln")
+    async def change_plan(request: Request):
+        account = require_session(request)
+        plan = (await request.form()).get("plan")
+        price = paddle.checkout_price(plan) if paddle and plan in PAID_PLANS else None
+        if not (price and paddle_client and account.paddle_subscription_id):
+            raise HTTPException(400, "Tarifwechsel nicht möglich")
+        try:
+            paddle_client.change_plan(account.paddle_subscription_id, price)
+        except Exception:  # noqa: BLE001
+            log.exception("plan change for %s failed", account.id)
+            return render(
+                request, "message.html", status_code=502, title="Tarifwechsel fehlgeschlagen",
+                text="Paddle hat den Wechsel nicht bestätigt. Bitte versuchen Sie es erneut oder nutzen Sie das Kundenportal.",
+            )
+        return RedirectResponse("/konto/abo?status=gewechselt", status_code=303)
+
+    @app.post("/paddle/webhook")
+    async def paddle_webhook(request: Request, background: BackgroundTasks):
+        if not paddle:
+            raise HTTPException(404)
+        raw = await request.body()
+        if not verify_paddle_signature(raw, request.headers.get("paddle-signature", ""), paddle.webhook_secret):
+            raise HTTPException(400, "invalid signature")
+        change = apply_subscription_event(store, paddle, store.secret, json.loads(raw))
+        if change and change.became_paid:
+            background.add_task(_retry_limited, store, store.account(change.account_id), gateway_factory, mailer, base_url)
+        return {"received": True}
 
     @app.get("/konto/dokumente/{invoice_id}/{name}")
     def my_download(request: Request, invoice_id: str, name: str):
@@ -429,15 +525,22 @@ def _download(store: Store, account: Account | None, invoice_id: str, name: str)
     return Response(content, media_type=media, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
-def _backfill(store: Store, account: Account, gateway_factory, mailer: Mailer) -> None:
+def _backfill(store: Store, account: Account, gateway_factory, mailer: Mailer, billable: bool = False) -> None:
     try:
-        backfill(store, account, gateway_factory(account), mailer)
+        backfill(store, account, gateway_factory(account), mailer, billable=billable)
     except Exception:  # noqa: BLE001 - logged; the user can retry from the dashboard
         log.exception("backfill for account %s failed", account.id)
 
 
-def _run(store: Store, account: Account, invoice_id: str, gateway_factory, mailer: Mailer) -> None:
+def _retry_limited(store: Store, account: Account, gateway_factory, mailer: Mailer, base_url: str) -> None:
     try:
-        process_invoice(store, account, invoice_id, gateway_factory(account), mailer)
+        retry_limited(store, account, gateway_factory(account), mailer, base_url)
+    except Exception:  # noqa: BLE001 - logged; remaining invoices retry on their next event
+        log.exception("retrying limited invoices for %s failed", account.id)
+
+
+def _run(store: Store, account: Account, invoice_id: str, gateway_factory, mailer: Mailer, base_url: str = "") -> None:
+    try:
+        process_invoice(store, account, invoice_id, gateway_factory(account), mailer, base_url=base_url)
     except Exception:  # noqa: BLE001 - logged; Stripe will not retry a 200, so surface in logs/alerts
         log.exception("processing %s for account %s failed", invoice_id, account.id)

@@ -4,6 +4,7 @@
 <h1>{{ account.profile.name if account.profile else "Ihr Konto" }}</h1>
 {% if notice == "eingerichtet" %}<div class="card"><strong>Eingerichtet.</strong> Ab jetzt wird jede neue Stripe-Rechnung automatisch umgewandelt. Ihre letzten Rechnungen werden gerade zur Kontrolle umgewandelt (ohne E-Mail-Versand); laden Sie die Seite in einer Minute neu.</div>
 {% elif notice == "gespeichert" %}<div class="card">Firmendaten gespeichert.</div>
+{% elif usage and usage.exhausted %}<div class="card"><strong>Monatslimit erreicht.</strong> Neue Stripe-Rechnungen werden gespeichert und nach einem <a href="/konto/abo">Upgrade</a> automatisch umgewandelt.</div>
 {% elif notice == "umwandlung" %}<div class="card">Die letzten Rechnungen werden umgewandelt (ohne E-Mail-Versand). Laden Sie die Seite gleich neu.</div>{% endif %}
 
 <div class="card">
@@ -16,9 +17,12 @@
     Ereignisse: <code>invoice.finalized</code>, <code>invoice.paid</code>
   {% endif %}
   <br><span class="muted">Versand an Kunden: {{ "aktiv" if account.send_to_customer else "aus – Sie erhalten jede E-Rechnung zuerst selbst" }}</span>
+  {% if usage %}<br><span class="muted">Tarif {{ usage.plan.name }}: {{ usage.used }} von {{ usage.plan.monthly_limit }} E-Rechnungen diesen Monat</span>
+  {% if usage.exhausted %}<span class="badge err">Limit erreicht</span>{% endif %}{% endif %}
   {% if account.is_oauth %}
   <p class="actions">
     <a href="/konto/einrichten">Firmendaten bearbeiten</a>
+    <a href="/konto/abo">Tarif und Abrechnung</a>
     <form method="post" action="/konto/umwandeln" class="inline"><button class="link" type="submit">Letzte Rechnungen umwandeln</button></form>
     <form method="post" action="/abmelden" class="inline"><button class="link" type="submit">Abmelden</button></form>
   </p>
