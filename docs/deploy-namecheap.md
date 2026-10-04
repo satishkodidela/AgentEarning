@@ -89,23 +89,20 @@ The app needs **Python 3.11 or newer**. Check in cPanel > **Setup Python
 App** that 3.11 or higher is offered. If not, ask Namecheap support, or use
 the Hetzner setup instead (`deploy/setup-server.sh`).
 
-Open **cPanel > Terminal** (or SSH, port 21098). If the repository is
-private, first create a read-only GitHub token:
-- GitHub > Settings > Developer settings > Fine-grained tokens.
-- Only repository **AgentEarning**, permission **Contents: Read-only**.
-
-Then:
+Open **cPanel > Terminal** (or SSH, port 21098). The repository is public,
+so no token is needed:
 
 ```bash
 cd ~
 git clone --branch claude/determined-lovelace-gxddxl \
-  https://<TOKEN>@github.com/satishkodidela/AgentEarning.git einvoice
-cd einvoice && git remote set-url origin https://github.com/satishkodidela/AgentEarning.git
+  https://github.com/satishkodidela/AgentEarning.git einvoice
 ```
 
-The last command removes the token from the saved remote. For updates,
-run `git pull` with the token in the URL again, or run `git pull` with the
-token as the password.
+If you make the repository private later, create a read-only GitHub token:
+- GitHub > Settings > Developer settings > Fine-grained tokens.
+- Only repository **AgentEarning**, permission **Contents: Read-only**.
+
+Then enter the token as the password when `git pull` asks for one.
 
 ## 4. Create the Python app and install (15 min)
 

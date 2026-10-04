@@ -42,7 +42,7 @@ Receiving them has been mandatory since 1 Jan 2025.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest                      # 114 tests, incl. official KoSIT samples
+.venv/bin/pytest                      # 116 tests, incl. official KoSIT samples
 
 # validate any XRechnung / ZUGFeRD file
 .venv/bin/einvoice-bridge validate rechnung.xml rechnung.pdf
