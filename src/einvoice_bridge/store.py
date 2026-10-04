@@ -1,0 +1,241 @@
+"""SQLite store for accounts, processed invoices and the waitlist.
+
+Generated files are archived write-once under ``<data>/archive``; the
+database keeps their SHA-256 so later tampering is detectable (GoBD).
+Stripe API keys and webhook secrets are encrypted at rest with Fernet.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import secrets
+import sqlite3
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+from cryptography.fernet import Fernet
+
+from .profile import SellerProfile
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS accounts (
+    id TEXT PRIMARY KEY,
+    dashboard_token TEXT UNIQUE NOT NULL,
+    stripe_api_key TEXT NOT NULL,
+    webhook_secret TEXT NOT NULL,
+    profile_json TEXT NOT NULL,
+    send_to_customer INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id TEXT NOT NULL REFERENCES accounts(id),
+    stripe_invoice_id TEXT NOT NULL,
+    number TEXT,
+    status TEXT NOT NULL,           -- generated | blocked | failed
+    problems_json TEXT NOT NULL DEFAULT '[]',
+    files_json TEXT NOT NULL DEFAULT '{}',
+    delivered_to TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (account_id, stripe_invoice_id)
+);
+CREATE TABLE IF NOT EXISTS waitlist (
+    email TEXT PRIMARY KEY,
+    token TEXT NOT NULL,
+    source TEXT,
+    created_at TEXT NOT NULL,
+    confirmed_at TEXT
+);
+"""
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+@dataclass
+class Account:
+    id: str
+    dashboard_token: str
+    stripe_api_key: str
+    webhook_secret: str
+    profile: SellerProfile
+    send_to_customer: bool
+
+
+@dataclass
+class Document:
+    id: int
+    account_id: str
+    stripe_invoice_id: str
+    number: str | None
+    status: str
+    problems: list[dict]
+    files: dict[str, str]  # name -> sha256
+    delivered_to: str | None
+    created_at: str
+
+
+class Store:
+    def __init__(self, data_dir: Path, secret_key: str):
+        self.data_dir = data_dir
+        self.archive = data_dir / "archive"
+        self.archive.mkdir(parents=True, exist_ok=True)
+        self.fernet = Fernet(secret_key.encode() if isinstance(secret_key, str) else secret_key)
+        self.db = sqlite3.connect(data_dir / "einvoice.sqlite3", check_same_thread=False)
+        self.db.row_factory = sqlite3.Row
+        self.db.executescript(SCHEMA)
+
+    # accounts -------------------------------------------------------------
+
+    def create_account(
+        self, profile: SellerProfile, stripe_api_key: str, webhook_secret: str, send_to_customer: bool = False
+    ) -> Account:
+        account = Account(
+            id=secrets.token_urlsafe(12),
+            dashboard_token=secrets.token_urlsafe(24),
+            stripe_api_key=stripe_api_key,
+            webhook_secret=webhook_secret,
+            profile=profile,
+            send_to_customer=send_to_customer,
+        )
+        with self.db:
+            self.db.execute(
+                "INSERT INTO accounts VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    account.id,
+                    account.dashboard_token,
+                    self._encrypt(stripe_api_key),
+                    self._encrypt(webhook_secret),
+                    json.dumps(profile.to_dict(), ensure_ascii=False),
+                    int(send_to_customer),
+                    now(),
+                ),
+            )
+        return account
+
+    def account(self, account_id: str) -> Account | None:
+        row = self.db.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        return self._account(row) if row else None
+
+    def account_by_token(self, token: str) -> Account | None:
+        row = self.db.execute("SELECT * FROM accounts WHERE dashboard_token = ?", (token,)).fetchone()
+        return self._account(row) if row else None
+
+    def _account(self, row: sqlite3.Row) -> Account:
+        return Account(
+            id=row["id"],
+            dashboard_token=row["dashboard_token"],
+            stripe_api_key=self._decrypt(row["stripe_api_key"]),
+            webhook_secret=self._decrypt(row["webhook_secret"]),
+            profile=SellerProfile.from_dict(json.loads(row["profile_json"])),
+            send_to_customer=bool(row["send_to_customer"]),
+        )
+
+    def _encrypt(self, value: str) -> str:
+        return self.fernet.encrypt(value.encode()).decode()
+
+    def _decrypt(self, value: str) -> str:
+        return self.fernet.decrypt(value.encode()).decode()
+
+    # documents ------------------------------------------------------------
+
+    def document(self, account_id: str, stripe_invoice_id: str) -> Document | None:
+        row = self.db.execute(
+            "SELECT * FROM documents WHERE account_id = ? AND stripe_invoice_id = ?",
+            (account_id, stripe_invoice_id),
+        ).fetchone()
+        return self._document(row) if row else None
+
+    def documents(self, account_id: str, limit: int = 200) -> list[Document]:
+        rows = self.db.execute(
+            "SELECT * FROM documents WHERE account_id = ? ORDER BY id DESC LIMIT ?", (account_id, limit)
+        ).fetchall()
+        return [self._document(r) for r in rows]
+
+    def save_document(
+        self,
+        account_id: str,
+        stripe_invoice_id: str,
+        number: str | None,
+        status: str,
+        problems: list[dict],
+        files: dict[str, bytes] | None = None,
+    ) -> Document:
+        hashes = {}
+        if files:
+            folder = self.document_dir(account_id, stripe_invoice_id)
+            folder.mkdir(parents=True, exist_ok=True)
+            for name, content in files.items():
+                path = folder / name
+                if path.exists():
+                    raise FileExistsError(f"{path} is archived and must not be overwritten")
+                path.write_bytes(content)
+                path.chmod(0o444)
+                hashes[name] = hashlib.sha256(content).hexdigest()
+        with self.db:
+            # A blocked invoice can be retried once the seller fixed the data;
+            # a generated one is final.
+            self.db.execute(
+                "DELETE FROM documents WHERE account_id = ? AND stripe_invoice_id = ? AND status != 'generated'",
+                (account_id, stripe_invoice_id),
+            )
+            self.db.execute(
+                "INSERT INTO documents (account_id, stripe_invoice_id, number, status, problems_json, files_json, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (account_id, stripe_invoice_id, number, status, json.dumps(problems, ensure_ascii=False), json.dumps(hashes), now()),
+            )
+        return self.document(account_id, stripe_invoice_id)
+
+    def mark_delivered(self, document_id: int, recipients: str) -> None:
+        with self.db:
+            self.db.execute("UPDATE documents SET delivered_to = ? WHERE id = ?", (recipients, document_id))
+
+    def document_dir(self, account_id: str, stripe_invoice_id: str) -> Path:
+        safe = "".join(c for c in stripe_invoice_id if c.isalnum() or c in "_-")
+        return self.archive / account_id / safe
+
+    def read_file(self, doc: Document, name: str) -> bytes | None:
+        if name not in doc.files:
+            return None
+        content = (self.document_dir(doc.account_id, doc.stripe_invoice_id) / name).read_bytes()
+        if hashlib.sha256(content).hexdigest() != doc.files[name]:
+            raise RuntimeError(f"Archived file {name} of {doc.stripe_invoice_id} was modified")
+        return content
+
+    def _document(self, row: sqlite3.Row) -> Document:
+        return Document(
+            id=row["id"],
+            account_id=row["account_id"],
+            stripe_invoice_id=row["stripe_invoice_id"],
+            number=row["number"],
+            status=row["status"],
+            problems=json.loads(row["problems_json"]),
+            files=json.loads(row["files_json"]),
+            delivered_to=row["delivered_to"],
+            created_at=row["created_at"],
+        )
+
+    # waitlist (double opt-in) ------------------------------------------------
+
+    def add_to_waitlist(self, email: str, source: str | None) -> str | None:
+        """Return a confirmation token, or None if the address is already confirmed."""
+        email = email.strip().lower()
+        row = self.db.execute("SELECT token, confirmed_at FROM waitlist WHERE email = ?", (email,)).fetchone()
+        if row and row["confirmed_at"]:
+            return None
+        if row:
+            return row["token"]
+        token = secrets.token_urlsafe(24)
+        with self.db:
+            self.db.execute("INSERT INTO waitlist VALUES (?, ?, ?, ?, NULL)", (email, token, source, now()))
+        return token
+
+    def confirm_waitlist(self, token: str) -> bool:
+        with self.db:
+            cur = self.db.execute(
+                "UPDATE waitlist SET confirmed_at = ? WHERE token = ? AND confirmed_at IS NULL", (now(), token)
+            )
+        return cur.rowcount == 1

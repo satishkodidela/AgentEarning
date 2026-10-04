@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Fehlercodes der E-Rechnung erklärt (XRechnung, ZUGFeRD){% endblock %}
+{% block description %}Alle Prüfregeln für XRechnung und EN 16931 (BR-DE, BR-CO, PEPPOL …) mit verständlicher Erklärung.{% endblock %}
+{% block content %}
+<h1>Fehlercodes der E-Rechnung</h1>
+<p class="lead">Jede Regel aus den offiziellen Prüfregeln von KoSIT (XRechnung) und CEN (EN 16931), mit Erklärung, was zu tun ist.</p>
+{% for prefix, items in groups.items() %}
+  <h2>{{ prefix }}</h2>
+  <ul class="rules">{% for r in items %}<li><a href="/regeln/{{ r.slug }}">{{ r.id }}</a>{% if r.hint %} ★{% endif %}</li>{% endfor %}</ul>
+{% endfor %}
+<p class="muted">★ = mit ausführlicher Erklärung</p>
+{% endblock %}

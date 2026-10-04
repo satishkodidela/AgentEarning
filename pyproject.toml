@@ -16,7 +16,8 @@ dependencies = [
     "fastapi>=0.110",
     "jinja2>=3.1",
     "python-multipart>=0.0.9",
-    "stripe>=10",
+    "stripe>=12",
+    "cryptography>=42",
     "uvicorn[standard]>=0.29",
 ]
 

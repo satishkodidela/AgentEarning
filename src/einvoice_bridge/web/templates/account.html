@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Ihr Konto – E-Rechnung für Stripe{% endblock %}
+{% block content %}
+<h1>{{ account.profile.name }}</h1>
+<div class="card">
+  <strong>Stripe-Webhook</strong><br>
+  Endpunkt: <code>{{ webhook_url }}</code><br>
+  Ereignisse: <code>invoice.finalized</code>, <code>invoice.paid</code><br>
+  <span class="muted">Versand an Kunden: {{ "aktiv" if account.send_to_customer else "aus – Sie erhalten jede E-Rechnung zuerst selbst" }}</span>
+</div>
+<h2>Rechnungen</h2>
+{% if not documents %}<p class="muted">Noch keine Rechnungen verarbeitet.</p>{% endif %}
+<table>
+{% for d in documents %}
+  <tr>
+    <td>{{ d.number or d.stripe_invoice_id }}<br><span class="muted">{{ d.created_at[:16].replace("T", " ") }}</span></td>
+    <td>
+      {% if d.status == "generated" %}<span class="badge ok">Erstellt</span>
+      {% elif d.status == "blocked" %}<span class="badge warn">Daten fehlen</span>
+      {% else %}<span class="badge err">Fehler</span>{% endif %}
+    </td>
+    <td>
+      {% for p in d.problems %}{% if p.severity != "info" %}<div class="muted">{{ p.message }}</div>{% endif %}{% endfor %}
+      {% if d.delivered_to %}<div class="muted">Zugestellt an {{ d.delivered_to }}</div>{% endif %}
+    </td>
+    <td>{% for name in d.files %}<a href="/konto/{{ account.dashboard_token }}/dokumente/{{ d.stripe_invoice_id }}/{{ name }}">{{ "PDF" if name.endswith(".pdf") else "XML" }}</a> {% endfor %}</td>
+  </tr>
+{% endfor %}
+</table>
+{% endblock %}

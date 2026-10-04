@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Prüfergebnis – E-Rechnung für Stripe{% endblock %}
+{% block content %}
+<h1>Prüfergebnis</h1>
+<p class="muted">Datei: {{ filename }}</p>
+{% if error %}
+  <div class="finding"><strong>Die Datei konnte nicht geprüft werden.</strong><br>{{ error }}</div>
+{% else %}
+  {% if report.valid %}
+    <p><span class="badge ok">Gültig</span> Die Rechnung erfüllt {% if report.is_xrechnung %}XRechnung 3.0 und {% endif %}EN 16931{% if report.warnings %} (mit {{ report.warnings|length }} Warnung{{ "en" if report.warnings|length != 1 }}){% endif %}.</p>
+  {% else %}
+    <p><span class="badge err">Ungültig</span> {{ report.errors|length }} Fehler{% if report.warnings %}, {{ report.warnings|length }} Warnung{{ "en" if report.warnings|length != 1 }}{% endif %}. Empfänger dürfen diese Rechnung ablehnen.</p>
+  {% endif %}
+  <p class="muted">Format: {{ report.syntax }} · Spezifikation: <code>{{ report.specification_id or "nicht angegeben" }}</code></p>
+
+  {% if facts %}
+  <table>
+    <tr><th>Rechnungsnummer</th><td>{{ facts.number or "–" }}</td><th>Datum</th><td>{{ facts.issue_date or "–" }}</td></tr>
+    <tr><th>Verkäufer</th><td>{{ facts.seller or "–" }}</td><th>Käufer</th><td>{{ facts.buyer or "–" }}</td></tr>
+    <tr><th>Gesamtbetrag</th><td>{{ facts.total or "–" }} {{ facts.currency or "" }}</td><th>Zahlbetrag</th><td>{{ facts.due or "–" }} {{ facts.currency or "" }}</td></tr>
+    <tr><th>Käuferreferenz</th><td>{{ facts.buyer_reference or "–" }}</td><th>Positionen</th><td>{{ facts.lines }}</td></tr>
+  </table>
+  {% endif %}
+
+  {% for f in report.findings %}
+    <div class="finding {{ f.severity }}">
+      <strong>{% if f.rule_id != "XSD" %}<a href="/regeln/{{ f.rule_id|lower }}">{{ f.rule_id }}</a>{% else %}Schema{% endif %}</strong>
+      <span class="badge {{ 'err' if f.severity == 'error' else 'warn' }}">{{ {"error": "Fehler", "warning": "Warnung", "info": "Hinweis"}[f.severity] }}</span><br>
+      {% if f.hint %}{{ f.hint }}<br><span class="muted">{{ f.message }}</span>{% else %}{{ f.message }}{% endif %}
+      {% if f.location %}<br><span class="muted"><code>{{ f.location|short_path }}</code></span>{% endif %}
+    </div>
+  {% endfor %}
+{% endif %}
+<p><a class="btn" href="/#pruefen">Weitere Datei prüfen</a></p>
+<div class="card"><strong>Rechnungen aus Stripe?</strong> Wir erzeugen sie automatisch gültig. <a href="/#warteliste">Zugang sichern</a></div>
+{% endblock %}

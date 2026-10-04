@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>E-Rechnungen direkt aus Stripe – automatisch erstellt und geprüft</h1>
+<p class="lead">Ab 1. Januar 2027 (Vorjahresumsatz über 800.000 €) und ab 2028 für alle müssen Unternehmen in Deutschland B2B-Rechnungen als E-Rechnung ausstellen. Eine PDF aus Stripe reicht dann nicht mehr. Wir wandeln jede Stripe-Rechnung automatisch in ZUGFeRD und XRechnung um.</p>
+
+<div class="steps">
+  <div><strong>1. Verbinden</strong><br><span class="muted">Stripe-Webhook einrichten, Firmendaten einmal hinterlegen.</span></div>
+  <div><strong>2. Automatisch umwandeln</strong><br><span class="muted">Jede finalisierte oder bezahlte Rechnung wird zu ZUGFeRD-PDF und XRechnung.</span></div>
+  <div><strong>3. Geprüft zustellen</strong><br><span class="muted">Prüfung nach den offiziellen Regeln, Archiv mit Prüfsumme, Versand an Ihren Kunden.</span></div>
+</div>
+
+<h2 id="pruefen">E-Rechnung kostenlos prüfen</h2>
+<div class="card">
+  <form action="/pruefen" method="post" enctype="multipart/form-data">
+    <p>XRechnung (XML) oder ZUGFeRD/Factur-X (PDF) hochladen:</p>
+    <p><input type="file" name="datei" accept=".xml,.pdf" required></p>
+    <button class="btn" type="submit">Jetzt prüfen</button>
+    <p class="muted">Ihre Datei wird nur im Arbeitsspeicher geprüft und nicht gespeichert. Geprüft wird mit den offiziellen Regeln von KoSIT (XRechnung 3.0) und CEN (EN 16931).</p>
+  </form>
+</div>
+
+<h2 id="warteliste">Für Stripe-Nutzer: Zugang sichern</h2>
+<div class="card">
+  <form action="/warteliste" method="post">
+    <input type="hidden" name="quelle" value="startseite">
+    <p><input type="email" name="email" placeholder="ihre@firma.de" required></p>
+    <p><label><input type="checkbox" name="einwilligung" value="true" required> Ich möchte per E-Mail informiert werden, sobald mein Zugang bereit ist. Die Einwilligung kann ich jederzeit widerrufen (siehe <a href="/datenschutz">Datenschutz</a>).</label></p>
+    <button class="btn" type="submit">Auf die Warteliste</button>
+  </form>
+</div>
+
+<h2>Häufige Fehler</h2>
+<p>Ihre E-Rechnung wurde abgelehnt? Hier erklären wir jede Prüfregel verständlich, z. B. <a href="/regeln/br-de-15">BR-DE-15 (Käuferreferenz)</a>, <a href="/regeln/br-co-17">BR-CO-17 (Steuerbetrag)</a> oder <a href="/regeln/peppol-en16931-r010">PEPPOL-EN16931-R010 (elektronische Adresse)</a>. <a href="/regeln">Alle Fehlercodes</a></p>
+{% endblock %}

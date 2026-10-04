@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ rule.id }}: Was bedeutet dieser Fehler in der E-Rechnung?{% endblock %}
+{% block description %}{{ rule.id }} ({{ rule.standard }}): {{ (rule.hint or rule.text)[:150] }}{% endblock %}
+{% block content %}
+<p class="muted"><a href="/regeln">Fehlercodes</a> › {{ rule.id }}</p>
+<h1>{{ rule.id }}</h1>
+<p><span class="badge {{ 'err' if rule.severity == 'Fehler' else 'warn' }}">{{ rule.severity }}</span> <span class="muted">Regelwerk: {{ rule.standard }}</span></p>
+{% if rule.hint %}<h2>Was bedeutet das?</h2><p>{{ rule.hint }}</p>{% endif %}
+<h2>Offizieller Regeltext</h2>
+<p><code>{{ rule.text }}</code></p>
+<div class="card">
+  <strong>Datei prüfen:</strong> Laden Sie Ihre E-Rechnung hoch und sehen Sie alle Fehler mit Erklärung.
+  <p><a class="btn" href="/#pruefen">Kostenlos prüfen</a></p>
+  <span class="muted">Sie schreiben Rechnungen mit Stripe? Wir erzeugen daraus automatisch gültige E-Rechnungen.</span>
+</div>
+{% endblock %}
