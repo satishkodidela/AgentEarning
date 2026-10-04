@@ -1,4 +1,4 @@
-"""Web app: free validator (lead magnet), rule pages (SEO), Stripe webhook, dashboard."""
+"""Web app: free validator (lead magnet), rule pages (SEO), Stripe App install, webhooks, dashboard."""
 
 from __future__ import annotations
 
@@ -6,12 +6,14 @@ import json
 import logging
 import os
 import re
+import secrets
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Callable
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
+from cryptography.fernet import InvalidToken
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from ..service import (
@@ -20,10 +22,13 @@ from ..service import (
     Mailer,
     SmtpMailer,
     StripeGateway,
+    backfill,
     process_invoice,
     should_process,
 )
 from ..store import Account, Store
+from ..stripe_oauth import OAuthError, StripeOAuth
+from .forms import parse_profile, values_from_profile
 from ..summary import summarize
 from ..validation import NotAnInvoice, extract_xml_from_pdf, validate
 from ..validation.catalog import by_slug, rules
@@ -36,6 +41,9 @@ TEMPLATES.env.filters["short_path"] = lambda path: re.sub(
     r"\[namespace-uri\(\)='[^']*'\]|Q\{[^}]*\}|\*:|\b[a-z]+:(?=[A-Z])|\[1\]", "", path
 )
 MAX_UPLOAD = 10 * 1024 * 1024
+SESSION_COOKIE = "session"
+STATE_COOKIE = "oauth_state"
+SESSION_DAYS = 30
 EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -45,6 +53,8 @@ def create_app(
     mailer: Mailer | None = None,
     base_url: str | None = None,
     legal_dir: Path | str | None = None,
+    oauth: StripeOAuth | None = None,
+    connect_webhook_secret: str | None = None,
 ) -> FastAPI:
     if store is None:
         data_dir = Path(os.environ.get("EINVOICE_DATA_DIR", "data"))
@@ -53,9 +63,20 @@ def create_app(
             raise RuntimeError("EINVOICE_SECRET_KEY is not set (generate one with `einvoice-bridge secret`)")
         data_dir.mkdir(parents=True, exist_ok=True)
         store = Store(data_dir, secret)
-    gateway_factory = gateway_factory or (lambda account: LiveStripeGateway(account.stripe_api_key))
     mailer = mailer or SmtpMailer()
     base_url = (base_url or os.environ.get("EINVOICE_BASE_URL", "http://localhost:8000")).rstrip("/")
+    oauth = oauth or StripeOAuth.from_env(base_url)
+    connect_webhook_secret = connect_webhook_secret or os.environ.get("STRIPE_CONNECT_WEBHOOK_SECRET")
+    secure_cookies = base_url.startswith("https://")
+
+    def live_gateway(account: Account) -> StripeGateway:
+        if account.is_oauth:
+            if oauth is None:
+                raise RuntimeError("Stripe App is not configured (STRIPE_APP_*)")
+            return LiveStripeGateway(oauth.access_token(store, account))
+        return LiveStripeGateway(account.stripe_api_key)
+
+    gateway_factory = gateway_factory or live_gateway
     # Lawyer-reviewed legal texts are dropped in as HTML files (impressum.html,
     # datenschutz.html, agb.html, rueckerstattung.html) without a code change.
     legal_dir = Path(legal_dir or os.environ.get("EINVOICE_LEGAL_DIR", "legal"))
@@ -68,7 +89,7 @@ def create_app(
         return TEMPLATES.TemplateResponse(
             request,
             template,
-            {"base_url": base_url, "contact_email": contact_email, **context},
+            {"base_url": base_url, "contact_email": contact_email, "stripe_app": oauth is not None, **context},
             status_code=status_code,
         )
 
@@ -196,14 +217,120 @@ def create_app(
             if ok else "Dieser Link ist ungültig oder wurde bereits verwendet.",
         )
 
-    # Stripe -----------------------------------------------------------------
+    # Stripe App install (OAuth) ---------------------------------------------
+
+    def session_account(request: Request) -> Account | None:
+        token = request.cookies.get(SESSION_COOKIE)
+        if not token:
+            return None
+        try:
+            account_id = store.fernet.decrypt(token.encode(), ttl=SESSION_DAYS * 86400).decode()
+        except InvalidToken:
+            return None
+        account = store.account(account_id)
+        return account if account and account.status != "uninstalled" else None
+
+    def require_session(request: Request) -> Account:
+        account = session_account(request)
+        if not account:
+            raise HTTPException(303, headers={"Location": "/anmelden"})
+        return account
+
+    def start_session(response: Response, account: Account) -> None:
+        response.set_cookie(
+            SESSION_COOKIE, store.fernet.encrypt(account.id.encode()).decode(),
+            max_age=SESSION_DAYS * 86400, httponly=True, secure=secure_cookies, samesite="lax",
+        )
+
+    @app.get("/stripe/install")
+    @app.get("/anmelden")
+    def install(request: Request):
+        """Start install, or sign in again: both are the same OAuth round trip."""
+        if oauth is None:
+            return render(
+                request, "message.html", status_code=503, title="Bald verfügbar",
+                text="Die Stripe-App ist noch nicht freigeschaltet. Tragen Sie sich auf der Startseite in die Warteliste ein.",
+            )
+        state = secrets.token_urlsafe(24)
+        response = RedirectResponse(oauth.authorize_url(state), status_code=303)
+        response.set_cookie(STATE_COOKIE, state, max_age=900, httponly=True, secure=secure_cookies, samesite="lax")
+        return response
+
+    @app.get("/stripe/oauth/callback")
+    def oauth_callback(
+        request: Request, code: str = "", state: str = "", error: str = "", error_description: str = ""
+    ):
+        if oauth is None:
+            raise HTTPException(404)
+        if error or not code:
+            return render(
+                request, "message.html", status_code=400, title="Installation abgebrochen",
+                text=error_description or "Die Verbindung mit Stripe wurde nicht hergestellt.",
+            )
+        # Installs started on our site carry our state, which must match the
+        # cookie (CSRF). Installs started in the Stripe App Marketplace arrive
+        # without state; the one-time code is then the only proof, as Stripe intends.
+        if state and not secrets.compare_digest(state, request.cookies.get(STATE_COOKIE, "")):
+            return render(
+                request, "message.html", status_code=400, title="Sitzung abgelaufen",
+                text="Bitte starten Sie die Verbindung mit Stripe erneut.",
+            )
+        try:
+            tokens = oauth.exchange_code(code)
+        except OAuthError as exc:
+            log.warning("OAuth code exchange failed: %s", exc)
+            return render(
+                request, "message.html", status_code=400, title="Verbindung fehlgeschlagen",
+                text="Stripe hat die Verbindung nicht bestätigt. Bitte versuchen Sie es erneut.",
+            )
+        account, _new = store.install(
+            tokens.stripe_account_id, tokens.livemode, tokens.access_token, tokens.refresh_token, tokens.expires_in
+        )
+        target = "/konto" if account.profile else "/konto/einrichten"
+        response = RedirectResponse(target, status_code=303)
+        start_session(response, account)
+        response.delete_cookie(STATE_COOKIE)
+        return response
+
+    @app.post("/stripe/webhook")
+    async def connect_webhook(request: Request, background: BackgroundTasks):
+        """Events from every account that installed the app (a Connect endpoint)."""
+        import stripe
+
+        if not connect_webhook_secret:
+            raise HTTPException(404)
+        payload = await request.body()
+        try:
+            stripe.WebhookSignature.verify_header(
+                payload.decode("utf-8"), request.headers.get("stripe-signature", ""), connect_webhook_secret
+            )
+        except stripe.SignatureVerificationError:
+            raise HTTPException(400, "invalid signature") from None
+        event = json.loads(payload)
+        account = store.account_by_stripe_id(event.get("account", ""), bool(event.get("livemode")))
+        if not account or not account.is_oauth:
+            return {"received": True, "ignored": "unknown account"}
+        if event.get("type") == "account.application.deauthorized":
+            store.uninstall(account.id)
+            return {"received": True}
+        obj = event.get("data", {}).get("object", {})
+        if (
+            account.status != "uninstalled"
+            and obj.get("id")
+            and event.get("type") in HANDLED_EVENTS
+            and should_process(event["type"], obj)
+        ):
+            background.add_task(_run, store, account, obj["id"], gateway_factory, mailer)
+        return {"received": True}
+
+    # manual accounts (restricted key + own webhook, set up with the CLI)
 
     @app.post("/stripe/webhook/{account_id}")
     async def stripe_webhook(account_id: str, request: Request, background: BackgroundTasks):
         import stripe
 
         account = store.account(account_id)
-        if not account:
+        if not account or account.is_oauth:
             raise HTTPException(404)
         payload = await request.body()
         try:
@@ -218,7 +345,58 @@ def create_app(
             background.add_task(_run, store, account, obj["id"], gateway_factory, mailer)
         return {"received": True}
 
-    # dashboard --------------------------------------------------------------
+    # dashboard (signed-in via Stripe) ------------------------------------------
+
+    @app.get("/konto", response_class=HTMLResponse)
+    def my_account(request: Request):
+        account = require_session(request)
+        if account.profile is None:
+            return RedirectResponse("/konto/einrichten", status_code=303)
+        return render(
+            request, "account.html", account=account, documents=store.documents(account.id),
+            base="/konto", notice=request.query_params.get("hinweis"),
+        )
+
+    @app.get("/konto/einrichten", response_class=HTMLResponse)
+    def setup_form(request: Request):
+        account = require_session(request)
+        values = values_from_profile(account.profile, account.send_to_customer)
+        return render(request, "onboarding.html", account=account, v=values, errors={})
+
+    @app.post("/konto/einrichten", response_class=HTMLResponse)
+    async def setup_save(request: Request, background: BackgroundTasks):
+        account = require_session(request)
+        form = dict(await request.form())
+        profile, errors, values = parse_profile(form)
+        if errors:
+            return render(request, "onboarding.html", status_code=422, account=account, v=values, errors=errors)
+        first_time = account.profile is None
+        store.save_profile(account.id, profile, values["send_to_customer"])
+        if first_time:
+            # Show results right away: convert recent invoices (archived, not e-mailed).
+            background.add_task(_backfill, store, store.account(account.id), gateway_factory, mailer)
+            return RedirectResponse("/konto?hinweis=eingerichtet", status_code=303)
+        return RedirectResponse("/konto?hinweis=gespeichert", status_code=303)
+
+    @app.post("/konto/umwandeln")
+    def convert_recent(request: Request, background: BackgroundTasks):
+        account = require_session(request)
+        if not account.is_active:
+            return RedirectResponse("/konto/einrichten", status_code=303)
+        background.add_task(_backfill, store, account, gateway_factory, mailer)
+        return RedirectResponse("/konto?hinweis=umwandlung", status_code=303)
+
+    @app.get("/konto/dokumente/{invoice_id}/{name}")
+    def my_download(request: Request, invoice_id: str, name: str):
+        return _download(store, require_session(request), invoice_id, name)
+
+    @app.post("/abmelden")
+    def logout():
+        response = RedirectResponse("/", status_code=303)
+        response.delete_cookie(SESSION_COOKIE)
+        return response
+
+    # dashboard (secret link, manual accounts) ----------------------------------
 
     @app.get("/konto/{token}", response_class=HTMLResponse)
     def dashboard(request: Request, token: str):
@@ -227,25 +405,35 @@ def create_app(
             raise HTTPException(404)
         return render(
             request, "account.html", account=account, documents=store.documents(account.id),
-            webhook_url=f"{base_url}/stripe/webhook/{account.id}",
+            base=f"/konto/{token}", webhook_url=f"{base_url}/stripe/webhook/{account.id}",
         )
 
     @app.get("/konto/{token}/dokumente/{invoice_id}/{name}")
     def download(token: str, invoice_id: str, name: str):
-        account = store.account_by_token(token)
-        doc = store.document(account.id, invoice_id) if account else None
-        content = store.read_file(doc, name) if doc else None
-        if content is None:
-            raise HTTPException(404)
-        media = "application/pdf" if name.endswith(".pdf") else "application/xml"
-        filename = f"{doc.number}.{name.rsplit('.', 1)[-1]}"
-        return Response(content, media_type=media, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+        return _download(store, store.account_by_token(token), invoice_id, name)
 
     @app.get("/health")
     def health():
         return {"ok": True}
 
     return app
+
+
+def _download(store: Store, account: Account | None, invoice_id: str, name: str) -> Response:
+    doc = store.document(account.id, invoice_id) if account else None
+    content = store.read_file(doc, name) if doc else None
+    if content is None:
+        raise HTTPException(404)
+    media = "application/pdf" if name.endswith(".pdf") else "application/xml"
+    filename = f"{doc.number}.{name.rsplit('.', 1)[-1]}"
+    return Response(content, media_type=media, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+def _backfill(store: Store, account: Account, gateway_factory, mailer: Mailer) -> None:
+    try:
+        backfill(store, account, gateway_factory(account), mailer)
+    except Exception:  # noqa: BLE001 - logged; the user can retry from the dashboard
+        log.exception("backfill for account %s failed", account.id)
 
 
 def _run(store: Store, account: Account, invoice_id: str, gateway_factory, mailer: Mailer) -> None:

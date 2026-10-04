@@ -19,5 +19,5 @@
 </ul>
 <h2>Bezahlung</h2>
 <p>14 Tage testen. Unser Bestellprozess wird von unserem Online-Händler Paddle.com abgewickelt. Paddle.com ist der Merchant of Record für alle unsere Bestellungen und stellt Ihnen die Rechnung aus. Details in den <a href="/agb">AGB</a> und unter <a href="/rueckerstattung">Rückerstattung</a>.</p>
-<p><a class="btn" href="/#warteliste">Zugang sichern</a></p>
+<p>{% if stripe_app %}<a class="btn" href="/stripe/install">Mit Stripe verbinden</a>{% else %}<a class="btn" href="/#warteliste">Zugang sichern</a>{% endif %}</p>
 {% endblock %}

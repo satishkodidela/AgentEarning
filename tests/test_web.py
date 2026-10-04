@@ -33,6 +33,9 @@ class FakeGateway:
     def payment_method(self, invoice):
         return self.method
 
+    def recent_invoices(self, limit):
+        return [self.invoice(i) for i in list(self.invoices)[:limit]]
+
 
 class FakeMailer:
     def __init__(self):
@@ -73,10 +76,10 @@ def client(store, gateway, mailer):
     return TestClient(app)
 
 
-def signed(payload: dict) -> tuple[bytes, dict]:
+def signed(payload: dict, secret: str = WEBHOOK_SECRET) -> tuple[bytes, dict]:
     body = json.dumps(payload).encode()
     ts = int(time.time())
-    sig = hmac.new(WEBHOOK_SECRET.encode(), f"{ts}.".encode() + body, hashlib.sha256).hexdigest()
+    sig = hmac.new(secret.encode(), f"{ts}.".encode() + body, hashlib.sha256).hexdigest()
     return body, {"stripe-signature": f"t={ts},v1={sig}", "content-type": "application/json"}
 
 

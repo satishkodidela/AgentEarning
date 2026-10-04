@@ -3,8 +3,10 @@
 <h1>E-Rechnungen direkt aus Stripe – automatisch erstellt und geprüft</h1>
 <p class="lead">Ab 1. Januar 2027 (Vorjahresumsatz über 800.000 €) und ab 2028 für alle müssen Unternehmen in Deutschland B2B-Rechnungen als E-Rechnung ausstellen. Eine PDF aus Stripe reicht dann nicht mehr. Wir wandeln jede Stripe-Rechnung automatisch in ZUGFeRD und XRechnung um.</p>
 
+{% if stripe_app %}<p><a class="btn" href="/stripe/install">Mit Stripe verbinden</a> <span class="muted">Lesezugriff auf Rechnungen · kein API-Schlüssel nötig · jederzeit in Stripe deinstallierbar</span></p>{% endif %}
+
 <div class="steps">
-  <div><strong>1. Verbinden</strong><br><span class="muted">Stripe-Webhook einrichten, Firmendaten einmal hinterlegen.</span></div>
+  <div><strong>1. Verbinden</strong><br><span class="muted">App in Stripe installieren, Firmendaten einmal hinterlegen.</span></div>
   <div><strong>2. Automatisch umwandeln</strong><br><span class="muted">Jede finalisierte oder bezahlte Rechnung wird zu ZUGFeRD-PDF und XRechnung.</span></div>
   <div><strong>3. Geprüft zustellen</strong><br><span class="muted">Prüfung nach den offiziellen Regeln, Archiv mit Prüfsumme, Versand an Ihren Kunden.</span></div>
 </div>

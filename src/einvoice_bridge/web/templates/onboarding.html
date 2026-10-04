@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Einrichtung – E-Rechnung für Stripe{% endblock %}
+{% block content %}
+{% macro field(name, label, hint="", type="text", required=False, autocomplete="") -%}
+  <label class="field{% if errors.get(name) %} has-error{% endif %}">
+    <span>{{ label }}{% if required %} *{% endif %}</span>
+    <input type="{{ type }}" name="{{ name }}" value="{{ v.get(name, '') }}"{% if required %} required{% endif %}{% if autocomplete %} autocomplete="{{ autocomplete }}"{% endif %}>
+    {% if errors.get(name) %}<em>{{ errors[name] }}</em>{% elif hint %}<small class="muted">{{ hint }}</small>{% endif %}
+  </label>
+{%- endmacro %}
+<h1>{{ "Firmendaten bearbeiten" if account.profile else "Fast fertig: Ihre Firmendaten" }}</h1>
+<p class="lead">{% if account.profile %}Änderungen gelten für alle neuen E-Rechnungen.{% else %}Stripe ist verbunden{% if not account.livemode %} (Testmodus){% endif %}. Diese Angaben kennt Stripe nicht, sie sind aber Pflicht in jeder E-Rechnung. Sie geben sie nur einmal ein.{% endif %}</p>
+{% if errors %}<div class="finding"><strong>Bitte prüfen Sie die markierten Felder.</strong></div>{% endif %}
+<form method="post" action="/konto/einrichten" class="form">
+  <h2>Ihr Unternehmen</h2>
+  {{ field("name", "Firmenname (wie im Handelsregister bzw. Ihr Name)", required=True, autocomplete="organization") }}
+  {{ field("line1", "Straße und Hausnummer", required=True, autocomplete="street-address") }}
+  <div class="row">
+    {{ field("postcode", "PLZ", required=True, autocomplete="postal-code") }}
+    {{ field("city", "Ort", required=True, autocomplete="address-level2") }}
+    {{ field("country_code", "Land", hint="z. B. DE", required=True) }}
+  </div>
+
+  <h2>Steuern</h2>
+  <div class="row">
+    {{ field("vat_id", "USt-IdNr.", hint="z. B. DE123456789") }}
+    {{ field("tax_number", "Steuernummer", hint="Pflicht, falls keine USt-IdNr.") }}
+  </div>
+  {{ field("legal_registration_id", "Handelsregister (optional)", hint="z. B. HRB 123456 B, Amtsgericht Charlottenburg") }}
+  <label class="check"><input type="checkbox" name="kleinunternehmer" value="1"{% if v.get("kleinunternehmer") %} checked{% endif %}> Ich bin Kleinunternehmer nach § 19 UStG und weise keine Umsatzsteuer aus.</label>
+
+  <h2>Kontakt für Rückfragen zu Rechnungen</h2>
+  <p class="muted">XRechnung verlangt Name, Telefon und E-Mail einer Kontaktperson.</p>
+  <div class="row">
+    {{ field("contact_name", "Name oder Abteilung", required=True, autocomplete="name") }}
+    {{ field("contact_phone", "Telefon", required=True, type="tel", autocomplete="tel") }}
+  </div>
+  <div class="row">
+    {{ field("contact_email", "E-Mail", required=True, type="email", autocomplete="email") }}
+    {{ field("invoice_email", "Absender-Adresse der E-Rechnung", hint="Leer lassen = Kontakt-E-Mail", type="email") }}
+  </div>
+
+  <h2>Bankverbindung</h2>
+  <p class="muted">Für offene Rechnungen (Zahlung per Überweisung) Pflicht. Bei automatisch per Karte bezahlten Abos optional.</p>
+  <div class="row">
+    {{ field("iban", "IBAN") }}
+    {{ field("bic", "BIC (optional)") }}
+  </div>
+  {{ field("creditor_id", "SEPA-Gläubiger-ID (nur bei Lastschrift)") }}
+
+  <h2>Versand</h2>
+  <label class="check"><input type="checkbox" name="send_to_customer" value="1"{% if v.get("send_to_customer") %} checked{% endif %}> E-Rechnungen direkt an meine Kunden senden (sonst erhalten Sie jede E-Rechnung zuerst selbst).</label>
+  <p class="muted">Tipp: erst ohne Versand starten, ein paar E-Rechnungen ansehen, dann einschalten. Bitte schalten Sie dann den PDF-Rechnungsversand von Stripe für diese Kunden ab, damit niemand zwei Rechnungen erhält.</p>
+
+  <p><button class="btn" type="submit">{{ "Speichern" if account.profile else "Einrichtung abschließen" }}</button></p>
+</form>
+{% endblock %}

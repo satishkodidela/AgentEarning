@@ -25,7 +25,8 @@ Receiving them has been mandatory since 1 Jan 2025.
 | Validator | `validation/` | XSD + EN 16931 + XRechnung rules, plain-German hints, rule catalogue |
 | Stripe mapper | `sources/stripe.py` | Stripe Invoice → model, or a German fix list of what is missing |
 | Pipeline | `service.py`, `store.py` | Webhook → convert → validate → write-once archive (SHA-256) → email |
-| Web app | `web/` | Free validator (lead magnet), 1,600+ rule pages (SEO), Stripe webhook, customer dashboard, double-opt-in waitlist |
+| Web app | `web/` | Free validator (lead magnet), 1,600+ rule pages (SEO), Stripe App install + onboarding, webhooks, customer dashboard, double-opt-in waitlist |
+| Stripe App | `stripe_oauth.py`, `stripe-app/` | OAuth install link, code exchange, token refresh, Connect webhook, uninstall handling; app manifest and setup guide |
 | CLI | `cli.py` | `validate`, `convert`, `fetch`, `account-create`, `secret`, `serve` |
 | Research | `reports/`, `research_notes/` | Market research behind the product choice |
 | Go-to-market | `docs/go-to-market.md` | Where to market, what not to do (cold email in Germany), pricing, kill criteria |
@@ -36,7 +37,7 @@ Receiving them has been mandatory since 1 Jan 2025.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest                      # 64 tests, incl. official KoSIT samples
+.venv/bin/pytest                      # 83 tests, incl. official KoSIT samples
 
 # validate any XRechnung / ZUGFeRD file
 .venv/bin/einvoice-bridge validate rechnung.xml rechnung.pdf
@@ -54,6 +55,20 @@ STRIPE_API_KEY=rk_test_... .venv/bin/einvoice-bridge fetch in_123 --profile my_p
 The seller profile holds what Stripe does not know (VAT ID / Steuernummer,
 contact, IBAN, Kleinunternehmer status). See
 `tests/fixtures/seller_profile.toml` for the format.
+
+## Self-serve install (Stripe App)
+
+With the Stripe App configured (`stripe-app/README.md`), a seller:
+1. clicks "Mit Stripe verbinden" and approves read access in Stripe,
+2. enters company data Stripe does not have (VAT ID or Steuernummer,
+   contact, IBAN) in a validated form, and
+3. lands in a dashboard where their newest invoices are already converted.
+   These are archived only, never e-mailed, to avoid duplicates.
+
+From then on, invoice events for every installed account arrive at one
+Connect webhook (`/stripe/webhook`). Access tokens (1 hour) are refreshed
+automatically. Signing in again is the same OAuth round trip, so there are
+no passwords. Uninstalling in Stripe deletes the tokens and keeps the archive.
 
 ## Running the service
 
@@ -106,8 +121,10 @@ SchXslt and rewrites `src/einvoice_bridge/validation/artifacts/`.
   their portal or Peppol; that is not automated.
 - PDF/A-3 metadata, embedded fonts and output intent are set, but the PDFs
   have not been run through veraPDF.
-- Onboarding is via CLI (restricted key + webhook secret). A Stripe App /
-  Connect OAuth flow is the next step for self-serve signup.
+- The Stripe App must be uploaded and reviewed by Stripe before live installs
+  work; test-mode install links work before that.
+- Plans and limits from `/preise` are not enforced yet; billing through
+  Paddle is the next step.
 - Legal pages (`/impressum`, `/datenschutz`, `/agb`, `/rueckerstattung`) are
   placeholders until lawyer-reviewed HTML files are placed in
   `EINVOICE_LEGAL_DIR`; see `docs/launch-setup.md`.

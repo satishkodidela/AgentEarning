@@ -12,12 +12,24 @@
 body { margin:0; font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--ink); background:var(--bg); }
 .wrap { max-width:880px; margin:0 auto; padding:0 16px; }
 header { border-bottom:1px solid var(--line); }
-header .wrap { display:flex; justify-content:space-between; align-items:center; height:56px; }
+header .wrap { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:6px 16px; min-height:56px; padding-top:10px; padding-bottom:10px; }
 header a { color:var(--ink); text-decoration:none; font-weight:600; }
-nav a { font-weight:400; margin-left:18px; color:var(--muted); }
+nav { display:flex; flex-wrap:wrap; gap:4px 16px; }
+nav a { font-weight:400; color:var(--muted); }
 .plans { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; }
 .plans .card { margin:0; }
 .price { font-size:1.6rem; font-weight:700; }
+.form .field { display:block; margin:10px 0; flex:1; min-width:0; }
+.form .field span { display:block; font-weight:600; font-size:.95rem; margin-bottom:3px; }
+.form .field input { width:100%; font-size:1rem; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); }
+.form .field em { color:var(--err); font-style:normal; font-size:.9rem; }
+.form .has-error input { border-color:var(--err); }
+.form .row { display:flex; gap:12px; flex-wrap:wrap; }
+.form .row .field { flex:1 1 180px; }
+.check { display:block; margin:10px 0; }
+form.inline { display:inline; }
+.actions { display:flex; flex-wrap:wrap; gap:6px 18px; margin:12px 0 0; }
+button.link { background:none; border:0; padding:0; color:var(--accent); text-decoration:underline; font:inherit; cursor:pointer; }
 main { padding:32px 0 48px; }
 h1 { font-size:2rem; line-height:1.2; margin:0 0 12px; }
 h2 { font-size:1.3rem; margin:32px 0 10px; }
@@ -40,12 +52,12 @@ code { font-size:.9em; background:var(--soft); padding:1px 5px; border-radius:4p
 .finding.warning { border-color:var(--warn); }
 .finding.info { border-color:var(--line); }
 footer { border-top:1px solid var(--line); padding:20px 0; color:var(--muted); font-size:.9rem; }
-footer a { color:var(--muted); margin-right:16px; }
+footer a { color:var(--muted); margin-right:16px; display:inline-block; }
 ul.rules { columns:3 180px; padding-left:18px; }
 </style>
 </head>
 <body>
-<header><div class="wrap"><a href="/">E-Rechnung für Stripe</a><nav><a href="/#pruefen">Prüfen</a><a href="/preise">Preise</a><a href="/regeln">Fehlercodes</a></nav></div></header>
+<header><div class="wrap"><a href="/">E-Rechnung für Stripe</a><nav><a href="/#pruefen">Prüfen</a><a href="/preise">Preise</a><a href="/regeln">Fehlercodes</a>{% if stripe_app %}<a href="/konto">Konto</a>{% endif %}</nav></div></header>
 <main><div class="wrap">{% block content %}{% endblock %}</div></main>
 <footer><div class="wrap"><a href="/preise">Preise</a><a href="/agb">AGB</a><a href="/rueckerstattung">Rückerstattung</a><a href="/datenschutz">Datenschutz</a><a href="/impressum">Impressum</a><a href="/kontakt">Kontakt</a><br>Prüfregeln: KoSIT XRechnung 3.0 &amp; CEN EN 16931</div></footer>
 </body>

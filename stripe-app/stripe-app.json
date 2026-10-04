@@ -1,0 +1,33 @@
+{
+  "id": "de.example.erechnung",
+  "version": "0.1.0",
+  "name": "E-Rechnung: XRechnung & ZUGFeRD",
+  "icon": "./icon.png",
+  "distribution_type": "public",
+  "stripe_api_access_type": "oauth",
+  "allowed_redirect_uris": [
+    "https://example.de/stripe/oauth/callback"
+  ],
+  "permissions": [
+    {
+      "permission": "invoice_read",
+      "purpose": "Liest finalisierte und bezahlte Rechnungen, um daraus E-Rechnungen (XRechnung, ZUGFeRD) zu erzeugen."
+    },
+    {
+      "permission": "tax_rate_read",
+      "purpose": "Liest die Steuersätze der Rechnungspositionen für die Umsatzsteuer-Aufschlüsselung."
+    },
+    {
+      "permission": "payment_intent_read",
+      "purpose": "Ermittelt, wie eine Rechnung bezahlt wurde, damit die E-Rechnung die Zahlungsart korrekt angibt."
+    },
+    {
+      "permission": "payment_method_read",
+      "purpose": "Liest die letzten Ziffern der Karte bzw. das SEPA-Mandat für die Zahlungsangaben der E-Rechnung."
+    },
+    {
+      "permission": "event_read",
+      "purpose": "Empfängt Ereignisse zu neuen und bezahlten Rechnungen, um sie automatisch umzuwandeln."
+    }
+  ]
+}

@@ -59,8 +59,10 @@ cover it.
      the draft offers 14 days
    - privacy policy (`/datenschutz`)
    - contact (`/kontakt`)
-8. **Then:** test the full flow with a Stripe account in test mode. See the
-   README, "Running the service".
+8. **Stripe App.** Upload the app and add the Connect webhook as described in
+   `stripe-app/README.md`. Then install it on a Stripe test account with the
+   test-mode link and run through setup. Submit it for Marketplace review once
+   the legal pages are final.
 
 ### DNS records (replace values in angle brackets)
 

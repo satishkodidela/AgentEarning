@@ -29,6 +29,7 @@ class StripeGateway(Protocol):
     def invoice(self, invoice_id: str) -> dict: ...
     def tax_rate(self, tax_rate_id: str) -> dict | None: ...
     def payment_method(self, invoice: dict) -> dict | None: ...
+    def recent_invoices(self, limit: int) -> list[dict]: ...
 
 
 class LiveStripeGateway:
@@ -50,6 +51,12 @@ class LiveStripeGateway:
             ]
             invoice["lines"] = {"object": "list", "data": all_lines, "has_more": False}
         return invoice
+
+    def recent_invoices(self, limit: int) -> list[dict]:
+        """Newest finalised invoices (open or paid), for the first run after install."""
+        page = self.client.v1.invoices.list({"limit": min(100, limit * 3)})
+        found = [inv.to_dict() for inv in page.data if inv.get("status") in ("open", "paid")]
+        return found[:limit]
 
     def tax_rate(self, tax_rate_id: str) -> dict | None:
         if tax_rate_id not in self._rates:
@@ -155,11 +162,22 @@ def should_process(event_type: str, invoice: dict) -> bool:
 
 
 def process_invoice(
-    store: Store, account: Account, invoice_id: str, gateway: StripeGateway, mailer: Mailer
+    store: Store,
+    account: Account,
+    invoice_id: str,
+    gateway: StripeGateway,
+    mailer: Mailer,
+    deliver: bool = True,
 ) -> Document:
+    """Convert one Stripe invoice. ``deliver=False`` archives without e-mailing (first-run backfill)."""
     existing = store.document(account.id, invoice_id)
     if existing and existing.status == "generated":
         return existing  # idempotent: Stripe retries webhooks
+    if not account.is_active:
+        # Installed but onboarding not finished: keep a visible placeholder;
+        # the invoice is retried on its next event or from the dashboard.
+        problem = {"field": "seller", "message": "Firmendaten fehlen noch. Bitte Einrichtung abschließen.", "severity": "error"}
+        return store.save_document(account.id, invoice_id, None, "blocked", [problem])
 
     raw = gateway.invoice(invoice_id)
     paid = raw.get("status") == "paid"
@@ -173,7 +191,8 @@ def process_invoice(
 
     if not result.ok:
         doc = store.save_document(account.id, invoice_id, raw.get("number"), "blocked", problems)
-        mailer.send(build_fix_list_email(account, raw, result.problems, account.profile.contact.email))
+        if deliver:
+            mailer.send(build_fix_list_email(account, raw, result.problems, account.profile.contact.email))
         return doc
 
     invoice = result.invoice
@@ -196,9 +215,23 @@ def process_invoice(
         files={"xrechnung.xml": xml, "zugferd.pdf": pdf},
     )
 
+    if not deliver:
+        return doc
     seller_copy = account.profile.contact.email
     to = [invoice.buyer.electronic_address] if account.send_to_customer else [seller_copy]
     bcc = [seller_copy] if account.send_to_customer else []
     mailer.send(build_delivery_email(invoice, pdf, xml, to, bcc))
     store.mark_delivered(doc.id, ", ".join(to + bcc))
     return store.document(account.id, invoice_id)
+
+
+def backfill(store: Store, account: Account, gateway: StripeGateway, mailer: Mailer, limit: int = 10) -> list[Document]:
+    """Convert the newest invoices right after setup so the dashboard is not empty.
+
+    Nothing is e-mailed: these invoices were already sent the old way, and
+    sending them again to customers would create duplicates.
+    """
+    return [
+        process_invoice(store, account, raw["id"], gateway, mailer, deliver=False)
+        for raw in gateway.recent_invoices(limit)
+    ]

@@ -1,13 +1,30 @@
 {% extends "base.html" %}
 {% block title %}Ihr Konto – E-Rechnung für Stripe{% endblock %}
 {% block content %}
-<h1>{{ account.profile.name }}</h1>
+<h1>{{ account.profile.name if account.profile else "Ihr Konto" }}</h1>
+{% if notice == "eingerichtet" %}<div class="card"><strong>Eingerichtet.</strong> Ab jetzt wird jede neue Stripe-Rechnung automatisch umgewandelt. Ihre letzten Rechnungen werden gerade zur Kontrolle umgewandelt (ohne E-Mail-Versand); laden Sie die Seite in einer Minute neu.</div>
+{% elif notice == "gespeichert" %}<div class="card">Firmendaten gespeichert.</div>
+{% elif notice == "umwandlung" %}<div class="card">Die letzten Rechnungen werden umgewandelt (ohne E-Mail-Versand). Laden Sie die Seite gleich neu.</div>{% endif %}
+
 <div class="card">
-  <strong>Stripe-Webhook</strong><br>
-  Endpunkt: <code>{{ webhook_url }}</code><br>
-  Ereignisse: <code>invoice.finalized</code>, <code>invoice.paid</code><br>
-  <span class="muted">Versand an Kunden: {{ "aktiv" if account.send_to_customer else "aus – Sie erhalten jede E-Rechnung zuerst selbst" }}</span>
+  {% if account.is_oauth %}
+    <strong>Mit Stripe verbunden</strong> <span class="badge ok">{{ "Live" if account.livemode else "Testmodus" }}</span><br>
+    <span class="muted">Konto {{ account.stripe_account_id }} · neue Rechnungen werden automatisch umgewandelt.</span>
+  {% else %}
+    <strong>Stripe-Webhook</strong><br>
+    Endpunkt: <code>{{ webhook_url }}</code><br>
+    Ereignisse: <code>invoice.finalized</code>, <code>invoice.paid</code>
+  {% endif %}
+  <br><span class="muted">Versand an Kunden: {{ "aktiv" if account.send_to_customer else "aus – Sie erhalten jede E-Rechnung zuerst selbst" }}</span>
+  {% if account.is_oauth %}
+  <p class="actions">
+    <a href="/konto/einrichten">Firmendaten bearbeiten</a>
+    <form method="post" action="/konto/umwandeln" class="inline"><button class="link" type="submit">Letzte Rechnungen umwandeln</button></form>
+    <form method="post" action="/abmelden" class="inline"><button class="link" type="submit">Abmelden</button></form>
+  </p>
+  {% endif %}
 </div>
+
 <h2>Rechnungen</h2>
 {% if not documents %}<p class="muted">Noch keine Rechnungen verarbeitet.</p>{% endif %}
 <table>
@@ -23,7 +40,7 @@
       {% for p in d.problems %}{% if p.severity != "info" %}<div class="muted">{{ p.message }}</div>{% endif %}{% endfor %}
       {% if d.delivered_to %}<div class="muted">Zugestellt an {{ d.delivered_to }}</div>{% endif %}
     </td>
-    <td>{% for name in d.files %}<a href="/konto/{{ account.dashboard_token }}/dokumente/{{ d.stripe_invoice_id }}/{{ name }}">{{ "PDF" if name.endswith(".pdf") else "XML" }}</a> {% endfor %}</td>
+    <td>{% for name in d.files %}<a href="{{ base }}/dokumente/{{ d.stripe_invoice_id }}/{{ name }}">{{ "PDF" if name.endswith(".pdf") else "XML" }}</a> {% endfor %}</td>
   </tr>
 {% endfor %}
 </table>
