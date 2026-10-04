@@ -100,6 +100,10 @@ def create_app(
     # datenschutz.html, agb.html, rueckerstattung.html) without a code change.
     legal_dir = Path(legal_dir or os.environ.get("EINVOICE_LEGAL_DIR", "legal"))
     contact_email = os.environ.get("EINVOICE_CONTACT_EMAIL", "")
+    # SSL domain validation (PositiveSSL, AutoSSL) and renewals place files in
+    # the hosting's public_html/.well-known; on Passenger the app answers every
+    # URL, so it must hand those files out itself.
+    well_known = Path(os.environ.get("EINVOICE_WELL_KNOWN_DIR") or (Path.home() / "public_html" / ".well-known"))
 
     app = FastAPI(title="E-Rechnungsbote", docs_url=None, redoc_url=None)
     app.state.store = store
@@ -502,6 +506,14 @@ def create_app(
     @app.get("/konto/{token}/dokumente/{invoice_id}/{name}")
     def download(token: str, invoice_id: str, name: str):
         return _download(store, store.account_by_token(token), invoice_id, name)
+
+    @app.get("/.well-known/{path:path}")
+    def well_known_file(path: str):
+        base = well_known.resolve()
+        target = (base / path).resolve()
+        if base not in target.parents or not target.is_file():
+            raise HTTPException(404)
+        return Response(target.read_bytes(), media_type="text/plain")
 
     @app.get("/health")
     def health():

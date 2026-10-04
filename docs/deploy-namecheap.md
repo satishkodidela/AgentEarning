@@ -12,19 +12,34 @@ server (see `docs/go-live-checklist.md`, phase D).
 > **Never paste passwords, API keys or tokens into a chat, e-mail or
 > GitHub.** They go only into `~/.einvoice-bridge.env` on the server.
 
-## 1. Domain and SSL (10 min)
+## 1. Domain and SSL (10–40 min, mostly waiting)
 
-1. **Namecheap Dashboard > Domain List > erechnungsbote.de > Manage:**
-   - **Nameservers:** keep "Namecheap Web Hosting DNS" if Namecheap set it
-     when you bought hosting. DNS is then edited in cPanel > Zone Editor.
-   - Otherwise use "Namecheap BasicDNS" and edit under Advanced DNS.
-2. **Dashboard > SSL Certificates > PositiveSSL > Activate:**
-   - Choose installation on your Namecheap hosting (cPanel).
-   - Validation is automatic when the domain points to the hosting.
-   - Wait until the status is "Active". It usually takes minutes, but can
-     take a few hours for a brand-new domain.
-3. **cPanel > Domains:** switch on **Force HTTPS Redirect** for
-   `erechnungsbote.de`.
+Do this **before** creating the Python app (step 4).
+
+1. **Point the domain at the hosting.** Go to Namecheap Dashboard > Domain
+   List > erechnungsbote.de > Manage > **Nameservers** and choose
+   **"Namecheap Web Hosting DNS"**. Save. Without this the domain has no web
+   address and SSL validation cannot succeed.
+2. Wait until `http://erechnungsbote.de` shows the default hosting page.
+   This usually takes 5–30 minutes.
+3. **SSL.** Go to Dashboard > SSL Certificates > PositiveSSL > Activate, and
+   choose the cPanel auto-installer. Once the domain points to the hosting,
+   it places the validation file and installs the certificate by itself,
+   within about 25 minutes.
+   - **If it stays PENDING after 30–40 minutes**, use the manual method:
+     1. Download the validation file on the SSL page.
+     2. In cPanel > File Manager (Settings > "Show hidden files"), open
+        `public_html` and create `.well-known/pki-validation/`. Upload the
+        file into it.
+     3. Open the `http://erechnungsbote.de/.well-known/pki-validation/….txt`
+        link shown on the SSL page. It must show the file content.
+     4. Click **Verify**.
+4. When the status is **ACTIVE**, go to cPanel > Domains and switch on
+   **Force HTTPS Redirect** for `erechnungsbote.de`.
+
+The app later serves `/.well-known/` files from `~/public_html/.well-known`
+itself (`EINVOICE_WELL_KNOWN_DIR`). This means validation and next year's
+renewal keep working after the Python app takes over the domain.
 
 ## 2. E-mail with Private Email (15 min)
 

@@ -221,3 +221,17 @@ def test_legal_texts_are_loaded_from_files(store, gateway, mailer, tmp_path):
     app = create_app(store=store, gateway_factory=lambda a: gateway, mailer=mailer, legal_dir=legal)
     page = TestClient(app).get("/impressum").text
     assert "Max Mustermann" in page and "Vor dem Livegang" not in page
+
+
+def test_ssl_validation_files_are_served_without_traversal(store, gateway, mailer, tmp_path, monkeypatch):
+    well_known = tmp_path / "public_html" / ".well-known"
+    (well_known / "pki-validation").mkdir(parents=True)
+    (well_known / "pki-validation" / "ABC.txt").write_text("sectigo-token")
+    (tmp_path / "secret.txt").write_text("do not serve")
+    monkeypatch.setenv("EINVOICE_WELL_KNOWN_DIR", str(well_known))
+    client = TestClient(create_app(store=store, gateway_factory=lambda a: gateway, mailer=mailer))
+    response = client.get("/.well-known/pki-validation/ABC.txt")
+    assert response.status_code == 200 and response.text == "sectigo-token"
+    assert client.get("/.well-known/pki-validation/missing.txt").status_code == 404
+    assert client.get("/.well-known/../../secret.txt").status_code == 404
+    assert client.get("/.well-known/%2e%2e/%2e%2e/secret.txt").status_code == 404

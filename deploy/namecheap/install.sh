@@ -38,6 +38,7 @@ if [ ! -f "$ENV_FILE" ]; then
   sed -e "s|^EINVOICE_SECRET_KEY=.*|EINVOICE_SECRET_KEY=$secret|" \
       -e "s|^EINVOICE_DATA_DIR=.*|EINVOICE_DATA_DIR=$DATA_DIR|" \
       -e "s|^EINVOICE_LEGAL_DIR=.*|EINVOICE_LEGAL_DIR=$DATA_DIR/legal|" \
+      -e "s|^EINVOICE_WELL_KNOWN_DIR=.*|EINVOICE_WELL_KNOWN_DIR=$HOME/public_html/.well-known|" \
       -e "s|erechnungsbote.de|$DOMAIN|g" \
       -e "s|^SMTP_HOST=.*|SMTP_HOST=mail.privateemail.com|" \
       -e "s|^SMTP_USER=.*|SMTP_USER=rechnung@$DOMAIN|" \
