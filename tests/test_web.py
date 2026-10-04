@@ -194,3 +194,20 @@ def test_send_invoice_blocked_at_finalize_is_retried_when_paid(client, store, ac
     body, headers = signed(paid)
     client.post(f"/stripe/webhook/{account.id}", content=body, headers=headers)
     assert store.document(account.id, "in_open").status == "generated"
+
+
+def test_pages_paddle_reviews_are_public(client):
+    # Paddle's domain review needs these to load without login and return 200.
+    for path in ("/", "/preise", "/agb", "/rueckerstattung", "/datenschutz", "/impressum", "/kontakt"):
+        assert client.get(path).status_code == 200, path
+    assert "Paddle.com" in client.get("/preise").text
+    assert "14 Tagen" in client.get("/rueckerstattung").text
+
+
+def test_legal_texts_are_loaded_from_files(store, gateway, mailer, tmp_path):
+    legal = tmp_path / "legal"
+    legal.mkdir()
+    (legal / "impressum.html").write_text("<p>Max Mustermann, Musterstraße 1</p>", encoding="utf-8")
+    app = create_app(store=store, gateway_factory=lambda a: gateway, mailer=mailer, legal_dir=legal)
+    page = TestClient(app).get("/impressum").text
+    assert "Max Mustermann" in page and "Vor dem Livegang" not in page

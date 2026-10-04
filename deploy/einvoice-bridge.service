@@ -1,0 +1,22 @@
+[Unit]
+Description=E-Rechnung für Stripe (einvoice-bridge)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=einvoice
+Group=einvoice
+EnvironmentFile=/etc/einvoice-bridge.env
+WorkingDirectory=/var/lib/einvoice
+ExecStart=/opt/einvoice-bridge/.venv/bin/einvoice-bridge serve --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+# Hardening: the app only needs to write its data directory.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/einvoice
+
+[Install]
+WantedBy=multi-user.target

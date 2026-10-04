@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Rückerstattung{% endblock %}
+{% block content %}
+<h1>Rückerstattung</h1>
+<div class="card"><strong>Entwurf – vor dem Livegang anwaltlich prüfen lassen.</strong></div>
+<p>Sie können ein kostenpflichtiges Abonnement innerhalb von <strong>14 Tagen</strong> nach der ersten Zahlung ohne Angabe von Gründen kündigen und erhalten den vollen Betrag zurück.</p>
+<p>Danach ist das Abonnement jederzeit zum Ende des laufenden Abrechnungszeitraums kündbar. Für angebrochene Zeiträume erfolgt keine anteilige Erstattung.</p>
+<p>Erstattungen werden von unserem Händler Paddle.com auf das ursprüngliche Zahlungsmittel ausgezahlt. Anfragen bitte an {% if contact_email %}<a href="mailto:{{ contact_email }}">{{ contact_email }}</a>{% else %}die auf der <a href="/kontakt">Kontaktseite</a> genannte Adresse{% endif %}.</p>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Kontakt{% endblock %}
+{% block content %}
+<h1>Kontakt</h1>
+{% if contact_email %}
+<p>Fragen zu E-Rechnungen, Ihrem Konto oder Rechnungen: <a href="mailto:{{ contact_email }}">{{ contact_email }}</a></p>
+{% else %}
+<div class="card"><strong>Vor dem Livegang:</strong> <code>EINVOICE_CONTACT_EMAIL</code> setzen.</div>
+{% endif %}
+<p class="muted">Wir antworten in der Regel innerhalb eines Werktags. Anbieterangaben finden Sie im <a href="/impressum">Impressum</a>.</p>
+{% endblock %}

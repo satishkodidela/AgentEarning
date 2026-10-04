@@ -2,5 +2,9 @@
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
 <h1>{{ title }}</h1>
-<div class="card"><strong>Vor dem Livegang ausfüllen.</strong> Angaben nach § 5 DDG (Impressum) bzw. Art. 13 DSGVO (Datenschutz) sind Pflicht; lassen Sie die Texte rechtlich prüfen.</div>
+{% if body %}
+  {{ body|safe }}
+{% else %}
+  <div class="card"><strong>Vor dem Livegang ausfüllen.</strong> Den anwaltlich geprüften Text als HTML-Datei im Ordner <code>EINVOICE_LEGAL_DIR</code> ablegen. Angaben nach § 5 DDG (Impressum), Art. 13 DSGVO (Datenschutz) und die AGB sind Pflicht.</div>
+{% endif %}
 {% endblock %}

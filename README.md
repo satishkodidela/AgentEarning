@@ -29,13 +29,14 @@ Receiving them has been mandatory since 1 Jan 2025.
 | CLI | `cli.py` | `validate`, `convert`, `fetch`, `account-create`, `secret`, `serve` |
 | Research | `reports/`, `research_notes/` | Market research behind the product choice |
 | Go-to-market | `docs/go-to-market.md` | Where to market, what not to do (cold email in Germany), pricing, kill criteria |
+| Launch setup | `docs/launch-setup.md`, `deploy/` | Costs, domain/server/e-mail/Paddle steps, DNS records, lawyer e-mail, one-command server setup |
 
 ## Quick start
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest                      # 62 tests, incl. official KoSIT samples
+.venv/bin/pytest                      # 64 tests, incl. official KoSIT samples
 
 # validate any XRechnung / ZUGFeRD file
 .venv/bin/einvoice-bridge validate rechnung.xml rechnung.pdf
@@ -107,8 +108,9 @@ SchXslt and rewrites `src/einvoice_bridge/validation/artifacts/`.
   have not been run through veraPDF.
 - Onboarding is via CLI (restricted key + webhook secret). A Stripe App /
   Connect OAuth flow is the next step for self-serve signup.
-- `/impressum` and `/datenschutz` are placeholders and must be filled with
-  real legal texts before going live.
+- Legal pages (`/impressum`, `/datenschutz`, `/agb`, `/rueckerstattung`) are
+  placeholders until lawyer-reviewed HTML files are placed in
+  `EINVOICE_LEGAL_DIR`; see `docs/launch-setup.md`.
 
 ## Licences of bundled third-party files
 

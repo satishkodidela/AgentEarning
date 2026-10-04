@@ -44,6 +44,7 @@ def create_app(
     gateway_factory: Callable[[Account], StripeGateway] | None = None,
     mailer: Mailer | None = None,
     base_url: str | None = None,
+    legal_dir: Path | str | None = None,
 ) -> FastAPI:
     if store is None:
         data_dir = Path(os.environ.get("EINVOICE_DATA_DIR", "data"))
@@ -55,14 +56,27 @@ def create_app(
     gateway_factory = gateway_factory or (lambda account: LiveStripeGateway(account.stripe_api_key))
     mailer = mailer or SmtpMailer()
     base_url = (base_url or os.environ.get("EINVOICE_BASE_URL", "http://localhost:8000")).rstrip("/")
+    # Lawyer-reviewed legal texts are dropped in as HTML files (impressum.html,
+    # datenschutz.html, agb.html, rueckerstattung.html) without a code change.
+    legal_dir = Path(legal_dir or os.environ.get("EINVOICE_LEGAL_DIR", "legal"))
+    contact_email = os.environ.get("EINVOICE_CONTACT_EMAIL", "")
 
     app = FastAPI(title="E-Rechnung für Stripe", docs_url=None, redoc_url=None)
     app.state.store = store
 
     def render(request: Request, template: str, status_code: int = 200, **context) -> HTMLResponse:
         return TEMPLATES.TemplateResponse(
-            request, template, {"base_url": base_url, **context}, status_code=status_code
+            request,
+            template,
+            {"base_url": base_url, "contact_email": contact_email, **context},
+            status_code=status_code,
         )
+
+    def legal(request: Request, name: str, title: str, fallback: str = "legal.html") -> HTMLResponse:
+        path = legal_dir / f"{name}.html"
+        if path.is_file():
+            return render(request, "legal.html", title=title, body=path.read_text(encoding="utf-8"))
+        return render(request, fallback, title=title)
 
     async def read_upload(upload: UploadFile) -> bytes:
         content = await upload.read(MAX_UPLOAD + 1)
@@ -110,9 +124,18 @@ def create_app(
             raise HTTPException(404, "Regel nicht gefunden")
         return render(request, "rule.html", rule=rule)
 
+    @app.get("/preise", response_class=HTMLResponse)
+    def pricing(request: Request):
+        return render(request, "pricing.html")
+
+    @app.get("/kontakt", response_class=HTMLResponse)
+    def contact(request: Request):
+        return render(request, "contact.html")
+
     @app.get("/sitemap.xml")
     def sitemap():
-        urls = [f"{base_url}/", f"{base_url}/regeln"] + [f"{base_url}/regeln/{r.slug}" for r in rules().values()]
+        pages = ["", "/preise", "/regeln", "/kontakt"]
+        urls = [f"{base_url}{p}" for p in pages] + [f"{base_url}/regeln/{r.slug}" for r in rules().values()]
         body = "".join(f"<url><loc>{u}</loc></url>" for u in urls)
         return Response(
             f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{body}</urlset>',
@@ -125,11 +148,19 @@ def create_app(
 
     @app.get("/impressum", response_class=HTMLResponse)
     def impressum(request: Request):
-        return render(request, "legal.html", title="Impressum")
+        return legal(request, "impressum", "Impressum")
 
     @app.get("/datenschutz", response_class=HTMLResponse)
     def privacy(request: Request):
-        return render(request, "legal.html", title="Datenschutzerklärung")
+        return legal(request, "datenschutz", "Datenschutzerklärung")
+
+    @app.get("/agb", response_class=HTMLResponse)
+    def terms(request: Request):
+        return legal(request, "agb", "Allgemeine Geschäftsbedingungen")
+
+    @app.get("/rueckerstattung", response_class=HTMLResponse)
+    def refunds(request: Request):
+        return legal(request, "rueckerstattung", "Rückerstattung", fallback="refund.html")
 
     # waitlist with double opt-in (consent is required for e-mail marketing in Germany)
 
