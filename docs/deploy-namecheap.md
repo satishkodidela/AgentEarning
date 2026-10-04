@@ -194,6 +194,7 @@ whether each part is complete.
 |---|---|
 | "Incomplete response" / 500 right after deploy | Read `~/einvoice-data/passenger.log`. Usually a typo in the env file. Run `einvoice-bridge doctor`. |
 | Old version still showing | `touch ~/einvoice/tmp/restart.txt` |
+| Site hangs, then 503; `stderr.log` says "Reached max children process limit" | Requests are stuck in the app. Update (`git pull`, rerun install.sh); the entry point now starts its worker thread after LiteSpeed forks. If processes are still stuck, run `pkill -u $USER -f lswsgi` and `touch ~/einvoice/tmp/restart.txt`. |
 | `pip install` fails on saxonche | Older server: run `pip install "saxonche==12.5.0"` (tested), then rerun install.sh |
 | First page load slow | Passenger starts the app on demand after idle time. That's normal on shared hosting. |
 | Test e-mail not arriving | Run `doctor --smtp` for the login. Check the SPF/DKIM records and Email Routing = Remote. |
